@@ -199,10 +199,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/translations")
     def search(
-        q: str | None = Query(None, max_length=100),
-        lang: str | None = Query(None, max_length=8),
-        limit: int = Query(50, ge=1, le=200),
-        offset: int = Query(0, ge=0),
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        lang: Annotated[str | None, Query(max_length=8)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
     ):
         return [_summary(t) for t in library.search(q, lang, limit, offset)]
 
