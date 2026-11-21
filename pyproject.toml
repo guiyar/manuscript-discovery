@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bible-typeset"
+version = "0.1.0"
+description = "Typeset any verse range of eBible.org texts as PDF, with optional parallel columns"
+requires-python = ">=3.11"
+dependencies = ["fastapi", "uvicorn", "pydantic-settings", "defusedxml"]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+bible-typeset = "bible_typeset.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bible_typeset"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
