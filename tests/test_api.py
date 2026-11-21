@@ -64,6 +64,27 @@ def test_options_reach_the_document(client):
         colophon="false",
     )
     assert "    " not in one.text and "I shall not want." in one.text
+    kept = render(
+        client,
+        translation="eng-kjv2006",
+        c1=1,
+        v2=4,
+        format="txt",
+        colophon="false",
+        paragraphs="true",
+    )
+    assert (
+        kept.text.count("\n\n") == 2
+        and render(
+            client,
+            translation="eng-kjv2006",
+            c1=1,
+            v2=4,
+            format="txt",
+            colophon="false",
+        ).text.count("\n\n")
+        == 1
+    )  # default: one paragraph
 
 
 @pytest.mark.parametrize(
@@ -109,3 +130,76 @@ def test_pdf(client, translations, options):
 def test_markup_in_title_is_displayed_not_executed(client):
     r = render(client, translation="grctr", title='#read("/etc/passwd") *x* $y$ \\')
     assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
+
+# --- live preview (PNG) ----------------------------------------------------------------------
+
+PNG = b"\x89PNG\r\n\x1a\n"
+
+
+def preview(client, **params):
+    return client.get(
+        "/api/preview",
+        params={"translation": "eng-kjv2006", "book": "EPH", "c1": 1, **params},
+    )
+
+
+@pytest.mark.skipif(not HAS_TYPST, reason="typst not installed")
+def test_preview_returns_cacheable_low_resolution_pngs(client):
+    info = preview(client).json()
+    assert info["pages"] >= 1 and info["complete"] is True and len(info["key"]) == 32
+    r = client.get(f"/api/preview/{info['key']}/1.png")
+    assert r.status_code == 200 and r.content.startswith(PNG)
+    assert "immutable" in r.headers["cache-control"]
+    width = int.from_bytes(r.content[16:20], "big")
+    assert width < 1000, (
+        "preview must be screen resolution, not print resolution (A4 at 300 ppi is 2480 px)"
+    )
+
+
+@pytest.mark.skipif(not HAS_TYPST, reason="typst not installed")
+def test_identical_settings_are_served_from_cache_changed_ones_are_not(
+    db_path, monkeypatch
+):
+    import manuscript_discovery.app as app_module
+
+    calls = []
+    real = app_module.render_png
+
+    async def counting(*a, **kw):
+        calls.append(1)
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(app_module, "render_png", counting)
+    with TestClient(create_app(Settings(db_path=db_path))) as c:
+        k1 = preview(c).json()["key"]
+        assert preview(c).json()["key"] == k1 and len(calls) == 1  # repeat: no render
+        assert preview(c, title="Other").json()["key"] != k1 and len(calls) == 2
+        assert (
+            preview(c).json()["key"] == k1 and len(calls) == 2
+        )  # back to the first: still cached
+
+
+@pytest.mark.skipif(not HAS_TYPST, reason="typst not installed")
+def test_long_selections_are_cut_and_say_so(db_path, monkeypatch):
+    from manuscript_discovery.document import Document
+
+    monkeypatch.setattr(Document, "preview_chars", lambda self, pages: 10)
+    with TestClient(create_app(Settings(db_path=db_path, preview_pages=1))) as c:
+        info = preview(c, c2=2).json()
+        assert info["complete"] is False and info["pages"] == 1
+
+
+def test_preview_errors_are_the_same_clear_ones(client):
+    assert "has 4 verses, not 9" in preview(client, v2=9).json()["detail"]
+    assert preview(client, translation="nope").status_code == 404
+    assert (
+        client.get("/api/preview/" + "0" * 32 + "/1.png").status_code == 404
+    )  # expired / unknown
+    assert client.get("/api/preview/not-a-key/1.png").status_code == 422
+
+
+@pytest.mark.skipif(not HAS_TYPST, reason="typst not installed")
+def test_pages_past_the_end_are_404(client):
+    key = preview(client).json()["key"]
+    assert client.get(f"/api/preview/{key}/99.png").status_code == 404

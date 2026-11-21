@@ -62,7 +62,17 @@
   @media (prefers-color-scheme: dark) { #status { color: var(--muted); } }
   #status.error { color: #ffd9c9; font-style: normal; font-weight: 600; }
   .sheet { flex: 1; min-height: 0; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 2px 10px rgb(0 0 0 / .25); }
-  iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+  .seg { display: inline-flex; }
+  .seg button { padding: .3rem .9rem; font-size: .9rem; background: var(--panel); color: var(--ink); border-color: var(--line); }
+  .seg button:first-child { border-radius: 2px 0 0 2px; }
+  .seg button:last-child { border-radius: 0 2px 2px 0; margin-left: -1px; }
+  .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #pages { height: 100%; overflow: auto; padding: 1.2rem; display: grid; gap: 1.1rem; align-content: start; justify-items: center; background: var(--desk); transition: opacity .15s; }
+  #pages[aria-busy=true] { opacity: .55; }
+  #pages img { width: min(100%, 46rem); height: auto; background: #fff; box-shadow: 0 2px 8px rgb(0 0 0 / .35); }
+  #pages .note { color: var(--panel); font-style: italic; margin: 0 0 .5rem; text-align: center; }
+  @media (prefers-color-scheme: dark) { #pages .note { color: var(--muted); } }
   #text { margin: 0; height: 100%; overflow: auto; padding: 2rem clamp(1rem, 6vw, 5rem); font: 1.1rem/1.7 var(--serif); white-space: pre-wrap; }
   .empty { height: 100%; display: grid; place-content: center; text-align: center; color: var(--muted); padding: 2rem; }
   .empty p { max-width: 30rem; margin: 0; font: italic 1.2rem/1.5 var(--serif); }
@@ -110,7 +120,7 @@
 
     <fieldset>
       <legend>Manuscript</legend>
-      <label class="check"><input id="paragraphs" type="checkbox" checked><span>Paragraph breaks<small>only where the translation marks them</small></span></label>
+      <label class="check"><input id="paragraphs" type="checkbox"><span>Paragraph breaks<small>off: continuous text; on: where the translation marks them</small></span></label>
       <label class="check"><input id="poetry" type="checkbox" checked><span>Poetry lines<small>only where the translation marks them</small></span></label>
       <label class="check"><input id="line_numbers" type="checkbox" checked><span>Line numbers<small>restart each page; first translation only when parallel</small></span></label>
       <label class="check"><input id="notes" type="checkbox" checked><span>Space for notes<small>wide margins and open line spacing</small></span></label>
@@ -131,17 +141,21 @@
     </details>
 
     <div class="actions">
-      <button class="primary" type="submit" id="preview">Preview PDF</button>
-      <button class="secondary" type="button" id="download">Download PDF</button>
-      <button class="secondary" type="button" id="plain">Show plain text</button>
+      <button class="primary" type="button" id="download">Download PDF</button>
     </div>
   </form>
 
   <main>
-    <div id="status" role="status" aria-live="polite"></div>
+    <div class="bar">
+      <div id="status" role="status" aria-live="polite"></div>
+      <div class="seg" role="group" aria-label="Preview as">
+        <button type="button" id="viewPage" aria-pressed="true">Page</button>
+        <button type="button" id="viewText" aria-pressed="false">Text</button>
+      </div>
+    </div>
     <div class="sheet">
-      <div class="empty" id="empty"><p>Choose a translation and a passage, then preview the page.</p></div>
-      <iframe id="pdf" title="PDF preview" hidden></iframe>
+      <div class="empty" id="empty"><p>Choose a translation and a passage. The page appears here and follows every change.</p></div>
+      <div id="pages" aria-busy="false" hidden></div>
       <pre id="text" hidden></pre>
     </div>
   </main>
@@ -152,11 +166,10 @@ const $ = (id) => document.getElementById(id);
 const outlines = {};   // translation id -> outline
 const names = {};      // translation id -> display name
 const bookNames = {};  // book code -> name, accumulated from every outline seen
-let blobUrl = null;
 let book = "";        // the chosen book lives here, not in the <select>: its options come and go
 
-async function api(url) {
-  const res = await fetch(url);
+async function api(url, signal) {
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const d = body.detail;
@@ -164,7 +177,7 @@ async function api(url) {
   }
   return res;
 }
-const getJson = async (url) => (await api(url)).json();
+const getJson = async (url, signal) => (await api(url, signal)).json();
 const outlineOf = async (id) => (outlines[id] ??= await getJson(`/api/translations/${id}/outline`));
 
 function status(msg, isError = false) {
@@ -268,8 +281,10 @@ function check() {
       box.append(b);
     }
   }
-  for (const id of ["preview", "download", "plain"]) $(id).disabled = list.length > 0;
+  $("download").disabled = list.length > 0;
   saveState();
+  if (list.length) { clearTimeout(timer); controller?.abort(); }   // keep the last good preview
+  else schedule();
 }
 
 async function refresh() {
@@ -327,61 +342,109 @@ function query(format, download = false) {
   return p;
 }
 
-async function fetchDoc(format, download = false) {
-  document.querySelectorAll("button").forEach((b) => (b.disabled = true));
-  status(format === "pdf" ? "Typesetting…" : "Preparing text…");
+/* ---- live preview: debounced, and a newer request cancels the one still in flight ---- */
+let view = "page", timer = null, controller = null, seq = 0;
+const show = (which) => { for (const id of ["empty", "pages", "text"]) $(id).hidden = id !== which; };
+
+function schedule() {
+  clearTimeout(timer);
+  timer = setTimeout(update, 450);
+}
+
+async function update() {
+  controller?.abort();
+  controller = new AbortController();
+  const { signal } = controller, mine = ++seq;
+  $("pages").setAttribute("aria-busy", "true");
+  status(view === "page" ? "Typesetting…" : "");
   try {
-    const res = await api(`/api/render?${query(format, download)}`);
-    status("");
-    return res;
+    if (view === "page") await showPages(signal, mine); else await showText(signal, mine);
+    if (mine === seq) status("");
   } catch (e) {
-    status(e.message, true);
-    return null;
+    if (e.name !== "AbortError" && mine === seq) status(e.message, true);
   } finally {
-    document.querySelectorAll("button").forEach((b) => (b.disabled = false));
-    check();
+    if (mine === seq) $("pages").setAttribute("aria-busy", "false");
   }
 }
 
-const show = (which) => { for (const id of ["empty", "pdf", "text"]) $(id).hidden = id !== which; };
+async function showPages(signal, mine) {
+  const info = await getJson(`/api/preview?${query("pdf")}`, signal);
+  const imgs = Array.from({ length: info.pages }, (_, i) =>
+    Object.assign(new Image(), { src: `/api/preview/${info.key}/${i + 1}.png`, alt: `Page ${i + 1}` }));
+  await Promise.all(imgs.map((img) => img.decode?.().catch(() => {})));   // swap only once decoded: no flicker
+  if (mine !== seq) return;
+  const note = info.complete ? [] : [Object.assign(document.createElement("p"),
+    { className: "note", textContent: `Preview shows the first ${info.pages} pages. Download the PDF for the whole text.` })];
+  $("pages").replaceChildren(...imgs, ...note);
+  show("pages");
+}
 
-$("form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const res = await fetchDoc("pdf");
-  if (!res) return;
-  if (blobUrl) URL.revokeObjectURL(blobUrl);
-  blobUrl = URL.createObjectURL(await res.blob());
-  $("pdf").src = blobUrl;
-  show("pdf");
-});
-$("download").addEventListener("click", async () => {
-  const res = await fetchDoc("pdf", true);
-  if (!res) return;
-  const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "passage.pdf";
-  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await res.blob()), download: name });
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-$("plain").addEventListener("click", async () => {
-  const res = await fetchDoc("txt");
-  if (!res) return;
-  $("text").textContent = await res.text();
+async function showText(signal, mine) {
+  const res = await api(`/api/render?${query("txt")}`, signal);
+  const body = await res.text();
+  if (mine !== seq) return;
+  $("text").textContent = body;
   show("text");
+}
+
+for (const [id, v] of [["viewPage", "page"], ["viewText", "text"]]) {
+  $(id).addEventListener("click", () => {
+    view = v;
+    $("viewPage").setAttribute("aria-pressed", String(v === "page"));
+    $("viewText").setAttribute("aria-pressed", String(v === "text"));
+    if (!problems().length) update();
+  });
+}
+
+$("form").addEventListener("submit", (e) => e.preventDefault());
+
+$("download").addEventListener("click", async () => {
+  $("download").disabled = true;
+  status("Typesetting the PDF…");
+  try {
+    const res = await api(`/api/render?${query("pdf", true)}`);
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "passage.pdf";
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await res.blob()), download: name });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    status("");
+  } catch (e) {
+    status(e.message, true);
+  } finally {
+    check();
+  }
 });
 
 $("book").addEventListener("change", newBook);
 for (const f of ["c1", "v1", "c2", "v2", "paper", "size", "title", ...TOGGLES]) $(f).addEventListener("input", check);
 
+// What a first visit shows. Only a starting point: if the library lacks this translation, the
+// first translation's first chapter is used instead.
+const FIRST_VISIT = { t1: "eng-kjv2006", book: "GEN", c1: 1, v1: 1, c2: 2, v2: 3 };
+
 (async function init() {
   const saved = new URLSearchParams(location.search);
+  const firstVisit = !saved.has("t1") && !saved.has("book");
   book = saved.get("book") || "";
+  if (firstVisit) {
+    book = FIRST_VISIT.book;
+    for (const f of ["c1", "v1", "c2", "v2"]) $(f).value = FIRST_VISIT[f];
+  }
   for (const f of FIELDS) if (saved.has(f)) $(f).value = saved.get(f);
   for (const f of TOGGLES) if (saved.has(f)) $(f).checked = saved.get(f) === "1";
   try {
     const first = (await p1.load(""))[0];
     for (const [p, key] of [[p1, "t1"], [p2, "t2"]]) {
-      const id = saved.get(key) || (p === p1 && first?.id);
-      if (id) await p.set(id).catch(() => {});
+      const id = saved.get(key) || (p === p1 && (firstVisit ? FIRST_VISIT.t1 : first?.id));
+      if (!id) continue;
+      try { await p.set(id); }
+      catch {
+        if (!(p === p1 && firstVisit && first)) continue;   // default translation not in this library
+        await p.set(first.id);
+        book = "";
+        for (const f of ["c1", "v1"]) $(f).value = 1;
+        for (const f of ["c2", "v2"]) $(f).value = "";
+      }
     }
     if (!$("c1").value) { $("c1").value = 1; $("v1").value = 1; }
     await refresh();   // keeps a saved book even if this translation lacks it (flagged), defaults otherwise

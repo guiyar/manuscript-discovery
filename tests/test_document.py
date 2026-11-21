@@ -36,8 +36,17 @@ def test_title_uses_the_translations_own_book_name(lib):
     assert build(lib, ("grctr",), c1=1).title == "Ἐφεσίους 1"
 
 
-def test_defaults_follow_the_sources_own_paragraphs_and_poetry(lib):
+def test_default_is_continuous_prose(lib):
     b = blocks(build(lib, c1=1, v1=1, c2=2, v2=3))
+    assert [x["type"] for x in b] == ["prose"]
+    assert b[0]["text"] == (
+        "Paul, an apostle of Jesus Christ Grace be to you Blessed be the God According as he "
+        "hath chosen us And you hath he quickened Wherein in time past ye walked"
+    )
+
+
+def test_paragraph_toggle_on_follows_the_sources_own_breaks(lib):
+    b = blocks(build(lib, c1=1, v1=1, c2=2, v2=3, paragraphs=True))
     assert (
         [x["text"] for x in b]
         == [
@@ -62,28 +71,27 @@ def test_poetry_lines_keep_levels_without_stanza_gaps(lib):
     ]
 
 
-def test_paragraph_toggle_off_runs_prose_together(lib):
-    b = blocks(build(lib, c1=1, v2=None, c2=2, paragraphs=False))
-    assert (
-        len(b) == 1
-        and b[0]["text"].startswith("Paul, an apostle of Jesus Christ Grace")
-        and b[0]["text"].endswith("ye walked")
-    )
-
-
-def test_poetry_toggle_off_turns_lines_into_one_paragraph(lib):
-    b = blocks(build(lib, book="PSA", c1=23, poetry=False))
+def test_poetry_toggle_off_turns_lines_into_prose(lib):
+    b = blocks(build(lib, book="PSA", c1=23, poetry=False, paragraphs=True))
     assert [x["type"] for x in b] == ["prose", "prose"]
     assert (
         b[0]["text"]
         == "The LORD is my shepherd; I shall not want. He maketh me to lie down"
     )
+    assert (
+        len(blocks(build(lib, book="PSA", c1=23, poetry=False))) == 1
+    )  # default: all one flow
 
 
 def test_both_toggles_off_gives_one_continuous_block(lib):
     assert (
         len(blocks(build(lib, book="PSA", c1=23, paragraphs=False, poetry=False))) == 1
     )
+
+
+def test_poetry_stays_lines_even_when_paragraphs_are_off(lib):
+    b = blocks(build(lib, book="PSA", c1=23))
+    assert [x["type"] for x in b] == ["poetry", "prose"]
 
 
 def test_plain_text_has_a_title_but_no_numbers(lib):
@@ -156,3 +164,51 @@ def test_missing_book_unknown_translation_and_reversed_range(lib):
 def test_size_limit(lib):
     with pytest.raises(SelectionError, match="too large"):
         build_document(lib, Request(["eng-kjv2006"], "EPH", 1, c2=2), max_verses=3)
+
+
+# --- preview truncation ----------------------------------------------------------------------
+
+
+def test_truncation_cuts_inside_a_block_at_a_word_boundary(lib):
+    doc = build(lib, c1=1, c2=2)  # default: one continuous block
+    full = doc.sections[0].blocks[0]["text"]
+    cut = doc.truncated(30)
+    text = cut.sections[0].blocks[0]["text"]
+    assert full.startswith(text) and 0 < len(text) <= 30 and full[len(text)] == " "
+    assert cut.sections[0].cut and not cut.complete
+    assert (
+        doc.truncated(10_000).complete
+        and doc.truncated(10_000).sections[0].blocks == doc.sections[0].blocks
+    )
+
+
+def test_truncation_stops_poetry_at_a_line_boundary(lib):
+    doc = build(lib, book="PSA", c1=23, v2=2).truncated(10)
+    assert len(doc.sections[0].blocks[0]["lines"]) == 1 and not doc.complete
+
+
+def test_a_cut_text_gets_no_colophon_but_a_whole_one_keeps_it(lib):
+    doc = build(lib, ("eng-kjv2006", "grctr"), c1=1, c2=2)
+    assert [t["colophon"] is None for t in doc.truncated(1).typst_data()["texts"]] == [
+        True,
+        True,
+    ]
+    assert (
+        doc.truncated(10_000).typst_data()["texts"][0]["colophon"]["notice"]
+        == "Public Domain"
+    )
+    assert (
+        doc.typst_data()["texts"][0]["colophon"] is not None
+    )  # the original is untouched
+
+
+def test_preview_size_estimate_scales_with_the_layout(lib):
+    base = build(lib, c1=1).preview_chars(6)
+    assert (
+        build(lib, c1=1, notes=False).preview_chars(6) > base
+    )  # no notes: more text per page
+    assert build(lib, c1=1, size=16.0).preview_chars(6) < base  # bigger type: less
+    assert build(lib, c1=1, paper="a5").preview_chars(6) < base
+    assert (
+        build(lib, ("eng-kjv2006", "grctr"), c1=1).preview_chars(6) < base
+    )  # narrower columns

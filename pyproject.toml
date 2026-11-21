@@ -5,9 +5,9 @@ build-backend = "hatchling.build"
 [project]
 name = "manuscript-discovery"
 version = "0.1.0"
-description = "Set any passage of Bible texts as a clean manuscript for study, with optional parallel columns"
+description = "Set any passage of eBible.org texts as a clean manuscript for study, with optional parallel columns"
 requires-python = ">=3.11"
-dependencies = ["fastapi", "uvicorn", "pydantic-settings", "defusedxml", "pycountry"]
+dependencies = ["fastapi", "uvicorn", "pydantic-settings", "defusedxml", "pycountry", "cachetools"]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]

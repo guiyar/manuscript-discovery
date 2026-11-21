@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hashlib
+import json
 import logging
 import shutil
+import time
 from contextlib import asynccontextmanager
 from importlib import resources
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 
+from cachetools import LRUCache
 from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import Request as HttpRequest
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
 from starlette.concurrency import run_in_threadpool
@@ -15,10 +21,37 @@ from starlette.concurrency import run_in_threadpool
 from .document import Request, SelectionError, build_document
 from .library import Library, LibraryUnavailable, Translation, UnknownTranslation
 from .settings import Settings
-from .typeset import TypesetError, render_pdf
+from .typeset import Aborted, TypesetError, render_pdf, render_png
 
 log = logging.getLogger(__name__)
 TranslationId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]{1,64}$")]
+PreviewKey = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{32}$")]
+
+
+class NoSniff:
+    """Adds X-Content-Type-Options. Deliberately plain ASGI: Starlette's BaseHTTPMiddleware
+    hides client disconnects from endpoints, which would defeat is_disconnected()."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        async def send_with_header(message):
+            if message["type"] == "http.response.start":
+                message["headers"] = [
+                    *message.get("headers", []),
+                    (b"x-content-type-options", b"nosniff"),
+                ]
+            await send(message)
+
+        await self.app(
+            scope, receive, send_with_header if scope["type"] == "http" else send
+        )
+
+
+class Preview(NamedTuple):
+    pages: list[bytes]
+    complete: bool  # False when the document continues beyond the pages shown
 
 
 class RenderQuery(BaseModel):
@@ -34,12 +67,31 @@ class RenderQuery(BaseModel):
     paper: Literal["a4", "a5", "a6", "us-letter"] = "a4"
     size: float = Field(11.0, ge=8, le=16)
     title: str | None = Field(None, max_length=200)
-    paragraphs: bool = True
+    paragraphs: bool = False
     poetry: bool = True
     line_numbers: bool = True
     notes: bool = True
     colophon: bool = True
     download: bool = False
+
+
+def _to_request(q: RenderQuery) -> Request:
+    return Request(
+        q.translation,
+        q.book,
+        q.c1,
+        q.v1,
+        q.c2,
+        q.v2,
+        q.paper,
+        q.size,
+        q.title,
+        q.paragraphs,
+        q.poetry,
+        q.line_numbers,
+        q.notes,
+        q.colophon,
+    )
 
 
 def _summary(t: Translation) -> dict:
@@ -56,6 +108,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     library = Library(settings.db_path)
     gate = asyncio.Semaphore(settings.max_concurrent)
+    # Rendered previews, keyed by a hash of exactly what was rendered. Only touched from the
+    # event loop, so no locking. Sized in bytes.
+    previews: LRUCache = LRUCache(
+        maxsize=int(settings.preview_cache_mb * 1024 * 1024),
+        getsizeof=lambda p: sum(map(len, p.pages)) or 1,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -80,11 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def unavailable(_, exc: LibraryUnavailable):
         return JSONResponse({"detail": str(exc)}, status_code=503)
 
-    @app.middleware("http")
-    async def secure_headers(request, call_next):
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        return response
+    app.add_middleware(NoSniff)
 
     @app.get("/", include_in_schema=False)
     def index():
@@ -117,27 +171,71 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except UnknownTranslation:
             raise HTTPException(404, "Unknown translation") from None
 
-    @app.get("/api/render")
-    async def render(q: Annotated[RenderQuery, Query()]):
-        req = Request(
-            q.translation,
-            q.book,
-            q.c1,
-            q.v1,
-            q.c2,
-            q.v2,
-            q.paper,
-            q.size,
-            q.title,
-            q.paragraphs,
-            q.poetry,
-            q.line_numbers,
-            q.notes,
-            q.colophon,
-        )
+    @app.get("/api/preview")
+    async def preview(q: Annotated[RenderQuery, Query()], http: HttpRequest):
+        """Render the first pages as low-resolution PNGs (screen preview, not for printing)."""
         try:
             doc = await run_in_threadpool(
-                build_document, library, req, settings.max_verses
+                build_document, library, _to_request(q), settings.max_verses
+            )
+        except SelectionError as e:
+            raise HTTPException(e.status, e.message) from None
+        doc = doc.truncated(doc.preview_chars(settings.preview_pages))
+        data = doc.typst_data()
+        key = hashlib.sha256(
+            json.dumps(
+                [data, settings.preview_ppi, settings.preview_pages],
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()[:32]
+        hit = previews.get(key)
+        if hit is None:
+            started = time.perf_counter()
+            try:
+                pages = await render_png(
+                    data, settings, gate, abort=http.is_disconnected
+                )
+            except Aborted:
+                log.info("preview %s abandoned: client gone", key[:8])
+                return Response(status_code=499)
+            except TypesetError as e:
+                raise HTTPException(500, str(e)) from None
+            hit = Preview(
+                pages[: settings.preview_pages],
+                doc.complete and len(pages) <= settings.preview_pages,
+            )
+            with contextlib.suppress(
+                ValueError
+            ):  # larger than the whole cache: just don't keep it
+                previews[key] = hit
+            log.info(
+                "preview %s rendered: %d pages, %.0f ms",
+                key[:8],
+                len(hit.pages),
+                (time.perf_counter() - started) * 1000,
+            )
+        return {"key": key, "pages": len(hit.pages), "complete": hit.complete}
+
+    @app.get("/api/preview/{key}/{page:int}.png")
+    async def preview_page(key: PreviewKey, page: int):
+        hit = previews.get(key)
+        if hit is None or not 1 <= page <= len(hit.pages):
+            raise HTTPException(
+                404, "Preview expired; change a setting to render it again"
+            )
+        # The key is a hash of the content, so a page image never changes.
+        return Response(
+            hit.pages[page - 1],
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
+
+    @app.get("/api/render")
+    async def render(q: Annotated[RenderQuery, Query()], http: HttpRequest):
+        try:
+            doc = await run_in_threadpool(
+                build_document, library, _to_request(q), settings.max_verses
             )
         except SelectionError as e:
             raise HTTPException(e.status, e.message) from None
@@ -151,7 +249,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
         try:
-            pdf = await render_pdf(doc.typst_data(), settings, gate)
+            pdf = await render_pdf(
+                doc.typst_data(), settings, gate, abort=http.is_disconnected
+            )
+        except Aborted:
+            return Response(status_code=499)
         except TypesetError as e:
             raise HTTPException(500, str(e)) from None
         return Response(

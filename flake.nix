@@ -80,6 +80,7 @@
                   pydantic-settings
                   defusedxml
                   pycountry
+                  cachetools
                   pytest
                   httpx
                 ]

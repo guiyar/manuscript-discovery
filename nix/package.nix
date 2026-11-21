@@ -18,8 +18,10 @@ python3Packages.buildPythonApplication {
     pydantic-settings
     defusedxml
     pycountry
+    cachetools
   ];
 
+  # Typst and the fonts travel with the program: no reliance on the host's PATH or fontconfig.
   makeWrapperArgs = [
     "--prefix PATH : ${lib.makeBinPath [ typst ]}"
     "--set-default MANUSCRIPT_FONT_DIR ${fonts}/share/fonts"

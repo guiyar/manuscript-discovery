@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .books import book_name
 from .library import BookOutline, Library, Translation, UnknownBook, UnknownTranslation
@@ -33,7 +33,9 @@ class Request:
     paper: str = "a4"
     size: float = 11.0
     title: str | None = None
-    paragraphs: bool = True  # keep paragraph breaks the source marks
+    paragraphs: bool = (
+        False  # keep paragraph breaks the source marks (off: continuous prose)
+    )
     poetry: bool = True  # keep poetry lines the source marks
     line_numbers: bool = True  # per-page line numbers (the first text, when parallel)
     notes: bool = True  # wide margins and open line spacing for study notes
@@ -45,6 +47,7 @@ class Section:
     translation: Translation
     typography: Typography
     blocks: list[dict]
+    cut: bool = False  # preview only: the text was truncated here
 
 
 @dataclass(slots=True)
@@ -54,9 +57,48 @@ class Document:
     sections: list[Section]
     filename: str
 
-    def _colophon(self, t: Translation) -> dict | None:
-        m = t.meta
-        if not self.request.colophon or not (m.short_notice or m.copyright):
+    @property
+    def complete(self) -> bool:
+        return not any(s.cut for s in self.sections)
+
+    def preview_chars(self, pages: int) -> int:
+        """Generous estimate of how much text fills `pages` pages with these settings, so a cut
+        preview never shows fewer pages than asked for but layout cost stays bounded."""
+        r = self.request
+        area = {"a4": 1.0, "a5": 0.5, "a6": 0.25, "us-letter": 1.03}[r.paper]
+        per_page = (
+            4400 * area * (11 / r.size) ** 2
+        )  # characters per page, plain layout, 11 pt A4
+        per_page *= 0.45 if r.notes else 1  # wide margins and open spacing
+        per_page *= (
+            0.5 if len(self.sections) > 1 else 1
+        )  # parallel: each text has half the width
+        return int(per_page * pages * 1.3)
+
+    def truncated(self, max_chars: int) -> "Document":
+        """Keep roughly the first max_chars of each text, cutting inside a block at a word
+        boundary if need be (continuous prose is a single huge block). A preview shows only the
+        first few pages and page layout is the expensive part, so this bounds the cost of a
+        preview however large the selection. A cut text gets no colophon: it would sit mid-text."""
+        sections = []
+        for s in self.sections:
+            kept, size, cut = [], 0, False
+            for b in s.blocks:
+                if size >= max_chars:
+                    cut = True
+                    break
+                clipped, was_cut = _clip(b, max_chars - size)
+                kept.append(clipped)
+                size += _weight(clipped)
+                if was_cut:
+                    cut = True
+                    break
+            sections.append(replace(s, blocks=kept, cut=cut))
+        return replace(self, sections=sections)
+
+    def _colophon(self, s: Section) -> dict | None:
+        t, m = s.translation, s.translation.meta
+        if s.cut or not self.request.colophon or not (m.short_notice or m.copyright):
             return None
         return {
             "name": t.name,
@@ -84,7 +126,7 @@ class Document:
                     "cjk": s.typography.cjk,
                     "heading": s.translation.abbreviation if parallel else None,
                     "blocks": s.blocks,
-                    "colophon": self._colophon(s.translation),
+                    "colophon": self._colophon(s),
                 }
                 for s in self.sections
             ],
@@ -101,11 +143,35 @@ class Document:
                 else:
                     parts.extend("    " * ln["level"] + ln["text"] for ln in b["lines"])
                 parts.append("")
-            if c := self._colophon(s.translation):
+            if c := self._colophon(s):
                 parts += ["—", f"{c['name']} ({c['abbreviation']})"]
                 parts += [x for x in (c["notice"], *c["statement"]) if x]
                 parts.append("")
         return "\n".join(parts).rstrip() + "\n"
+
+
+def _weight(block: dict) -> int:
+    return (
+        sum(len(x["text"]) for x in block["lines"])
+        if block["type"] == "poetry"
+        else len(block["text"])
+    )
+
+
+def _clip(block: dict, room: int) -> tuple[dict, bool]:
+    """The block cut to about `room` characters, and whether anything was dropped."""
+    if block["type"] == "prose":
+        text = block["text"]
+        if len(text) <= room:
+            return block, False
+        return {**block, "text": text[:room].rsplit(" ", 1)[0] or text[:room]}, True
+    lines, used = [], 0
+    for line in block["lines"]:
+        if used >= room:
+            return {**block, "lines": lines}, True
+        lines.append(line)
+        used += len(line["text"])
+    return block, False
 
 
 def reference(name: str, c1: int, v1: int, c2: int, v2: int, last_verse) -> str:
