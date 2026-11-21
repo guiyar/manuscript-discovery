@@ -92,6 +92,7 @@
               pkgs.poppler-utils # pdftotext / pdftoppm for inspecting output
               # Development Tools
               pkgs.hongdown
+              pkgs.nixfmt-tree
               pkgs.pyright
               pkgs.ruff
             ];

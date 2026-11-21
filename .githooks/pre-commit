@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -eu
+
+hongdown -c && \
+    treefmt --formatters nixfmt && \
+    ruff check && \
+    ruff format --check
