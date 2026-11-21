@@ -218,7 +218,9 @@ def test_preview_size_estimate_scales_with_the_layout(lib):
 
 
 def test_line_spacing_choices_and_notes_switch(lib):
-    lead = lambda **kw: build(lib, c1=1, **kw).typst_data()["leading"]
+    def lead(**kw):
+        return build(lib, c1=1, **kw).typst_data()["leading"]
+
     assert lead() == lead(line_spacing="1.5") == 1.15
     assert lead(line_spacing="2") == 1.75 > lead()
     assert (

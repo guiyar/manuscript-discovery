@@ -1,6 +1,6 @@
 import zipfile
 
-from conftest import BOM, PD, ZIPS, dbl
+from conftest import BOM, PD, dbl
 from manuscript_discovery.metadata import Metadata, read_metadata
 
 

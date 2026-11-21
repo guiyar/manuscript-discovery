@@ -1,6 +1,5 @@
 import shutil
 import sqlite3
-import zipfile
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -32,7 +31,9 @@ def test_all_translations_ingested_with_metadata_from_their_files(lib):
 
 
 def test_search_by_name_abbreviation_language_and_word(lib):
-    ids = lambda **kw: [t.id for t in lib.search(**kw)]
+    def ids(**kw):
+        return [t.id for t in lib.search(**kw)]
+
     assert ids(q="king james") == ["eng-kjv2006"]
     assert ids(q="textus") == ["grctr"] and ids(q="TR grc") == [
         "grctr"

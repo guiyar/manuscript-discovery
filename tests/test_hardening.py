@@ -5,7 +5,6 @@ import base64
 import hashlib
 import re
 import shutil
-import sqlite3
 from pathlib import Path
 
 import httpx
@@ -59,22 +58,26 @@ def test_every_response_carries_the_security_headers(db_path):
             assert h["cross-origin-resource-policy"] == "same-origin", path
 
 
+def _digest(text):
+    # Recompute the hashes independently of the app's own parser.
+    return (
+        "'sha256-"
+        + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode()
+        + "'"
+    )
+
+
 def test_the_csp_allows_exactly_the_inline_code_the_page_contains(db_path, tmp_path):
     for name, root in served_variants(tmp_path).items():
         html = (root / "index.html").read_text("utf-8")
         with client(db_path, static_dir=root) as c:
             csp = c.get("/").headers["content-security-policy"]
-        # Recompute the hashes independently of the app's own parser.
-        digest = lambda text: (
-            "'sha256-"
-            + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode()
-            + "'"
-        )
+
         scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
         styles = re.findall(r"<style>(.*?)</style>", html, re.S)
         assert scripts and styles, name
-        assert f"script-src {' '.join(map(digest, scripts))};" in csp + ";", name
-        assert f"style-src {' '.join(map(digest, styles))};" in csp + ";", name
+        assert f"script-src {' '.join(map(_digest, scripts))};" in csp + ";", name
+        assert f"style-src {' '.join(map(_digest, styles))};" in csp + ";", name
         assert "unsafe-inline" not in csp and "unsafe-eval" not in csp, name
 
 
