@@ -3,6 +3,7 @@ import gc
 import os
 import stat
 import time
+import warnings
 
 import pytest
 
@@ -151,9 +152,6 @@ def test_cancelling_at_any_moment_never_leaves_typst_running(tmp_path):
 
 
 @pytest.mark.skipif(not os.path.isdir("/proc"), reason="needs /proc")
-@pytest.mark.filterwarnings(
-    "error::pytest.PytestUnraisableExceptionWarning", "error::ResourceWarning"
-)
 def test_cancelling_the_startup_font_check_leaves_nothing_running(tmp_path):
     """The self-test runs in the background and is cancelled at shutdown, possibly mid-run."""
     from manuscript_discovery import diagnostics
@@ -172,7 +170,19 @@ def test_cancelling_the_startup_font_check_leaves_nothing_running(tmp_path):
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    run(scenario())
-    gc.collect()  # an abandoned process transport would complain here
+    # Garbage left by earlier tests (an unclosed database, say) is collected whenever any test
+    # next calls gc.collect(). Settle it first, then judge only the warnings asyncio raises
+    # about an abandoned process, so this test fails for its own leaks and no one else's.
+    gc.collect()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        run(scenario())
+        gc.collect()  # an abandoned process transport would complain here
+    abandoned = [
+        str(w.message)
+        for w in caught
+        if "subprocess" in str(w.message) or "transport" in str(w.message)
+    ]
+    assert abandoned == []
     time.sleep(0.3)
     assert leaked_processes(marker) == []
