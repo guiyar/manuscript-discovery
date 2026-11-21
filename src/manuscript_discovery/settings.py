@@ -4,12 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Configuration, read from ``BIBLE_*`` environment variables."""
+    """Configuration, read from ``MANUSCRIPT_*`` environment variables."""
 
-    model_config = SettingsConfigDict(env_prefix="BIBLE_")
+    model_config = SettingsConfigDict(env_prefix="MANUSCRIPT_")
 
-    data_dir: Path = Path("data")  # folder holding eBible ``*_usfx.zip`` files
-    texts_config: Path | None = None  # optional replacement for the bundled texts.toml
+    db_path: Path = Path("library.sqlite")
     font_dir: Path | None = None  # if set, ONLY these fonts are used (reproducible)
     typst_bin: str = "typst"
     max_verses: int = 3000  # largest selection accepted

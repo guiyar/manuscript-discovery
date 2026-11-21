@@ -22,7 +22,7 @@ class TypesetError(RuntimeError):
 
 async def render_pdf(data: dict, settings: Settings, gate: asyncio.Semaphore) -> bytes:
     template = (
-        resources.files("bible_typeset")
+        resources.files("manuscript_discovery")
         .joinpath("template/book.typ")
         .read_text("utf-8")
     )
@@ -78,7 +78,7 @@ class _tempdir:
     """Async-friendly TemporaryDirectory yielding a Path."""
 
     async def __aenter__(self) -> Path:
-        self._td = tempfile.TemporaryDirectory(prefix="bible-")
+        self._td = tempfile.TemporaryDirectory(prefix="md-")
         return Path(self._td.name)
 
     async def __aexit__(self, *exc) -> None:

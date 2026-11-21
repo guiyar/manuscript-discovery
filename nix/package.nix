@@ -6,7 +6,7 @@
 }:
 
 python3Packages.buildPythonApplication {
-  pname = "bible-typeset";
+  pname = "manuscript-discovery";
   version = "0.1.0";
   pyproject = true;
   src = lib.cleanSource ../.;
@@ -17,12 +17,12 @@ python3Packages.buildPythonApplication {
     uvicorn
     pydantic-settings
     defusedxml
+    pycountry
   ];
 
-  # Typst and the fonts travel with the program: no reliance on the host's PATH or fontconfig.
   makeWrapperArgs = [
     "--prefix PATH : ${lib.makeBinPath [ typst ]}"
-    "--set-default BIBLE_FONT_DIR ${fonts}/share/fonts"
+    "--set-default MANUSCRIPT_FONT_DIR ${fonts}/share/fonts"
   ];
 
   nativeCheckInputs = [
@@ -30,11 +30,11 @@ python3Packages.buildPythonApplication {
     python3Packages.httpx
     typst
   ];
-  preCheck = "export BIBLE_FONT_DIR=${fonts}/share/fonts";
-  pythonImportsCheck = [ "bible_typeset" ];
+  preCheck = "export MANUSCRIPT_FONT_DIR=${fonts}/share/fonts";
+  pythonImportsCheck = [ "manuscript_discovery" ];
 
   meta = {
-    description = "Typeset verse ranges of eBible.org texts as PDF";
-    mainProgram = "bible-typeset";
+    description = "Set any passage of eBible.org texts as a clean manuscript for study";
+    mainProgram = "manuscript-discovery";
   };
 }

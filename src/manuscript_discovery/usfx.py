@@ -1,13 +1,11 @@
 """Parse eBible.org USFX (XML) into paragraph-aware, verse-addressable pieces.
 
-USFX is the XML twin of USFM. Compared with eBible's ``readaloud`` files it keeps
-verse boundaries; compared with verse-per-line files it keeps paragraph and
-poetry structure, which is what good typesetting needs.
+A *piece* is the part of one verse that lies inside one paragraph or line of poetry. A
+paragraph holding several verses becomes several pieces sharing a ``par`` id, so selecting a
+verse range is a filter and rebuilding paragraphs is a group-by.
 
-A *piece* is the part of one verse that lies inside one paragraph. A verse that
-spans two paragraphs becomes two pieces; a paragraph that holds several verses
-becomes several pieces sharing the same ``par`` id. Selecting a verse range is
-then a filter, and re-assembling paragraphs is a group-by.
+Only text that is part of the scripture is kept. Headings, footnotes, cross-references,
+descriptive titles and blank-line markers are editorial additions and are left out.
 """
 
 from __future__ import annotations
@@ -22,16 +20,21 @@ from defusedxml import ElementTree as ET  # hardened against entity-expansion at
 
 class Piece(NamedTuple):
     par: int  # paragraph id, unique within a book
-    kind: str  # "p" = prose paragraph, "q" = line of verse/poetry/list
+    kind: str  # "p" = prose paragraph, "q" = line of poetry or list
     level: int  # indent level for "q" lines (0 = flush left)
     chapter: int
-    start: int  # first verse covered (verse bridges such as "3-4" have end > start)
+    start: int  # first verse covered (a bridge such as "3-4" has end > start)
     end: int
     text: str
 
 
-# Paragraph styles that carry scripture text. Everything else (headings, cross-reference
-# lines, descriptive titles, introductions, running heads) is deliberately left out.
+class Parsed(NamedTuple):
+    language_code: str | None  # <languageCode>, e.g. "eng"
+    book_names: dict[str, str]  # code -> short name, from the book's own <toc>/<h>
+    books: dict[str, list[Piece]]
+
+
+# Real eBible files carry the paragraph style in ``style``; ``sfm`` is accepted as a fallback.
 _PROSE = re.compile(r"^(p|m|mi|nb|pi\d?|pc|pr|pm|pmo|pmc|pmr|cls)$")
 _LINES = re.compile(r"^(q\d?|qr|qc|qm\d?|li\d?|lim\d?|lh|lf)$")
 
@@ -43,18 +46,22 @@ _SKIP = frozenset(
 _VERSE_ID = re.compile(r"(\d+)(?:\D+(\d+))?")
 
 
+def _clean(text: str) -> str:
+    return " ".join(text.split())
+
+
 def _classify(el: Element) -> tuple[str, int] | None:
-    sfm = el.get("sfm") or {"q": "q", "li": "li"}.get(el.tag, "p")
-    digits = re.search(r"\d", sfm)
+    style = el.get("style") or el.get("sfm") or {"q": "q", "li": "li"}.get(el.tag, "p")
+    digits = re.search(r"\d", style)
     n = int(digits.group()) if digits else int(el.get("level") or 1)
-    if _PROSE.match(sfm):
+    if _PROSE.match(style):
         return "p", 0
-    if _LINES.match(sfm):
-        if sfm.startswith("li"):
+    if _LINES.match(style):
+        if style.startswith("li"):
             return "q", max(n - 1, 0)
-        if sfm in ("lh", "lf"):
+        if style in ("lh", "lf"):
             return "q", 0
-        return "q", {"qr": 3, "qc": 2}.get(sfm, n)
+        return "q", {"qr": 3, "qc": 2}.get(style, n)
     return None
 
 
@@ -73,7 +80,7 @@ class _Walker:
         return self.pieces
 
     def _flush(self) -> None:
-        text = " ".join("".join(self.buf).split())
+        text = _clean("".join(self.buf))
         self.buf = []
         if text and self.verse and self.chapter:
             self.pieces.append(
@@ -92,9 +99,8 @@ class _Walker:
         tag = el.tag
         if tag == "c":
             self._flush()
-            self.chapter = (
-                int(el.get("id") or 0) if (el.get("id") or "").isdigit() else 0
-            )
+            cid = el.get("id") or ""
+            self.chapter = int(cid) if cid.isdigit() else 0
             self.verse = None
         elif tag == "v":
             self._flush()
@@ -118,23 +124,39 @@ class _Walker:
             self._children(el)
 
 
-def parse_usfx(stream: IO[bytes]) -> dict[str, list[Piece]]:
+def _short_name(book: Element) -> str | None:
+    """<toc level="2"> is the short name; fall back to the running head <h>, then the long name."""
+    toc = {t.get("level"): _clean("".join(t.itertext())) for t in book.findall("toc")}
+    h = book.find("h")
+    return (
+        toc.get("2")
+        or (_clean("".join(h.itertext())) if h is not None else None)
+        or toc.get("1")
+        or None
+    )
+
+
+def parse_usfx(stream: IO[bytes]) -> Parsed:
+    names: dict[str, str] = {}
     books: dict[str, list[Piece]] = {}
+    language = None
     for _, el in ET.iterparse(stream, events=("end",)):
-        if el.tag == "book":
+        if el.tag == "languageCode":
+            language = (el.text or "").strip() or None
+        elif el.tag == "book":
             code = (el.get("id") or "").upper()
             if code:
+                if name := _short_name(el):
+                    names[code] = name
                 books[code] = _Walker().run(el)
             el.clear()
-    return books
+    return Parsed(language, names, books)
 
 
-def load_usfx_zip(path) -> dict[str, list[Piece]]:
-    """Read ``<id>_usfx.zip`` as published on ebible.org."""
-    with zipfile.ZipFile(path) as zf:
-        xml = [n for n in zf.namelist() if n.lower().endswith(".xml")]
-        if not xml:
-            raise ValueError(f"{path}: no XML file inside")
-        preferred = [n for n in xml if n.lower().endswith("usfx.xml")]
-        with zf.open((preferred or xml)[0]) as f:
-            return parse_usfx(f)
+def load_usfx(zf: zipfile.ZipFile) -> Parsed:
+    xml = [n for n in zf.namelist() if n.lower().endswith(".xml")]
+    preferred = [n for n in xml if n.lower().endswith("usfx.xml")]
+    if not preferred:
+        raise ValueError("no *usfx.xml inside the archive")
+    with zf.open(preferred[0]) as f:
+        return parse_usfx(f)

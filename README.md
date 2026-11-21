@@ -1,87 +1,99 @@
-# Scripture typesetter
+# Manuscript Discovery
 
-Pick any contiguous run of verses from an [eBible.org](https://ebible.org) text and get a
-professionally typeset PDF (or plain text). No verse, chapter or book numbers appear in the
-body; the only reference is the title (`Ephesians 1:15–2:10`). Optionally set two translations
-side by side in independently flowing columns.
+Set any contiguous passage of an Bible text as a clean manuscript for
+[Manuscript Discovery](https://fionapfennigwerth.info/manuscript-discovery/)
+study: no chapter or verse numbers, no headings, no footnotes, nothing added to
+the text. Only a title (the passage reference), page numbers and line numbers,
+with room around the text for notes. Output is a typeset PDF or plain text,
+optionally with a second translation in a parallel column.
 
 ## Quick start (Nix)
 
 ```sh
-git add -A                      # flakes only see git-tracked files
-nix develop                     # Python, Typst and the fonts, all pinned
-# put eBible *_usfx.zip files in ./data   (see "Getting texts")
-python -m bible_typeset         # http://127.0.0.1:8000
-pytest                          # also exercises real Typst + the pinned fonts
+nix develop                 # Python, Typst and fonts, all pinned
+python -m manuscript_discovery ingest ~/ebible   # a folder of *_usfx.zip files; re-run any time
+python -m manuscript_discovery                   # http://127.0.0.1:8000
+pytest
 ```
 
 ## Getting texts
 
-Download the **USFX** zip of each translation (the `…_usfx.zip` link on its eBible page) into
-`data/`, e.g. `grctr_usfx.zip`, `eng-kjv2006_usfx.zip`, `cmn2006_usfx.zip`.
+Download the **USFX** zip of each translation (`<id>_usfx.zip`, linked from its
+[eBible](https://ebible.org) page) into one folder and run `ingest` on the
+folder. Everything is read from inside each zip:
 
-The `*_readaloud.zip` files used in the proof of concept cannot be used here: they contain one file
-per chapter with verse boundaries removed, so a verse range cannot be cut from them. USFX keeps
-verse markers *and* paragraph/poetry structure, and is plain XML.
+| Read from | Used for |
+|---|---|
+| `*_usfx.xml` | the text, its paragraph and poetry markup, and the translation's own book names |
+| `*metadata.xml` (DBL) | name, abbreviation, language, script, direction, country, copyright statement |
+| `*VernacularAdditional.xml` | the one-line licence notice, when the statement's first line is long |
 
-Display names, hyphenation language and fonts per text live in `src/bible_typeset/texts.toml`
-(override with `BIBLE_TEXTS_CONFIG`). Unlisted texts still work, using defaults. **Check the two
-Chinese entries**: confirm whether each is simplified or traditional and adjust font/region.
+Fonts, hyphenation language and text direction are derived from the language and
+script in the metadata. Every metadata field is optional: a zip without the
+files (or with a differently shaped one) still ingests, using its id as the name
+and omitting the copyright notice.
+
+`ingest` skips files whose SHA-256 is unchanged, parses changed ones in parallel
+(`-j`), and replaces each translation in a single transaction, so it is safe to
+run while the app is serving.
+
+## What the manuscript contains
+
+* **Paragraph breaks** and **poetry lines**: exactly as the source marks them
+  (USFX `p`/`q` styles), each switchable off. Switching off only ever merges
+  (nothing is invented). The method's purest form is continuous prose, so turn
+  paragraphs off for that.
+* **Line numbers** restart on each page; with two translations they count the
+  first one.
+* **Space for notes**: wide margins and open line spacing.
+* **Copyright notice** at the end of each text: name, one-line licence notice,
+  full statement.
+* Left out as editorial: section headings, footnotes, cross-references, Psalm
+  descriptive titles.
+
+## Choosing between translations
+
+The passage is independent of the translation. Switching translations never
+changes it, and the choice is kept in the URL. If the new translation cannot
+supply the range (a verse, chapter or whole book it lacks), the page says
+exactly what is missing, disables the buttons, and offers an explicit **Fit
+passage to these translations** action. The server enforces the same rule and
+never clamps.
 
 ## Deployment
 
+* **NixOS:** `services.manuscript-discovery = { enable = true; sourceDir =
+  "/srv/ebible"; };` ingests new or changed zips before each start. Put a
+  reverse proxy in front for TLS.
 * **Docker, built by Nix:** `nix build .#docker && docker load < result`, then
-  `docker run -p 8000:8000 -v $PWD/data:/data:ro bible-typeset`
-* **NixOS service:**
-  ```nix
-  inputs.bible-typeset.url = "github:you/bible-typeset";
-  # ...
-  imports = [ bible-typeset.nixosModules.default ];
-  services.bible-typeset = { enable = true; dataDir = "/srv/ebible"; port = 8000; };
-  ```
-  Put a reverse proxy (nginx/Caddy) in front for TLS.
+  `docker run --rm -v md:/data -v ~/ebible:/sources:ro manuscript-discovery
+  ingest /sources` and `docker run -p 8000:8000 -v md:/data
+  manuscript-discovery`.
 
-Settings are environment variables (`BIBLE_DATA_DIR`, `BIBLE_FONT_DIR`, `BIBLE_MAX_VERSES`,
-`BIBLE_MAX_CONCURRENT`, `BIBLE_TIMEOUT_S`, `BIBLE_HOST`, `BIBLE_PORT`; see `settings.py`).
+Settings are `MANUSCRIPT_*` environment variables (see `settings.py`).
 
-## Why these choices
+## Design
 
-**The font problem.** The old `shell.nix` provided TeX Live but no fonts, and nothing told fontconfig
-where fonts were; `\setmainfont{Noto Serif}` only worked when the host happened to have it. Fonts are
-now Nix packages, and the app passes Typst `--ignore-system-fonts --font-path <that closure>`, so the
-same fonts are used on every machine, in the container and in the service.
+* **Storage:** one SQLite file. Per translation, one row per chapter holding
+  zlib-compressed JSON, plus small `book` rows (verse counts, names) so outlines
+  never decode text. Nothing is cached in Python, so memory does not grow with
+  the number of translations. A real KJV is ~4.8 MB and reads a 176-verse range
+  in well under a millisecond.
+* **Typst:** one small binary, millisecond compiles, OpenType/hyphenation/CJK
+  support, and text reaches it as JSON data, never as source, so there is
+  nothing to escape or inject.
+* **Boundaries:** `usfx`/`metadata` (read files) → `library` (SQLite) →
+  `document` (selection to blocks) → `typeset` (Typst). `typography` derives
+  per-text settings. There are no abstract interfaces yet; add one when a second
+  implementation exists.
 
-**Typst instead of XeLaTeX.** Typst is one small binary (no TeX Live closure, no package
-collections to enumerate), compiles in milliseconds, and has the typographic features needed here:
-OpenType shaping, hyphenation, justification, CJK line-breaking and punctuation handling, and flowing
-grid cells for parallel columns. Most importantly for a web service, text is passed to it as **JSON
-data**, not spliced into source, so there is no escaping step and no TeX-style injection surface
-(`\write18`, `\input`, …). XeLaTeX remains the more mature engine, and the tests exercise the same
-Greek, Latin and CJK cases that matter; swap it back in only if specific LaTeX packages are needed.
+## Limitations
 
-**Python/FastAPI.** The work is parsing text, validating input and supervising one subprocess, which is
-squarely in Python's range. FastAPI gives typed query validation (Pydantic), async subprocess handling
-and OpenAPI docs at `/api/docs`; `defusedxml` parses the XML; `pydantic-settings` handles configuration.
-
-## Notes and limitations
-
-* **Greek uses `lang = "el"`** (see `texts.toml`): Typst has no `grc` hyphenation patterns, but the
-  Greek ones hyphenate polytonic text correctly (checked with Libertinus Serif).
-* **Parallel columns flow independently**, as with LaTeX `parallel`. Verse numbering differs between
-  traditions in places (Psalms, some of the Prophets), and columns are not aligned verse by verse.
-* Ranges stay within one book. Section headings, cross-references, footnotes and Psalm descriptive
-  titles (`\d`) are intentionally left out; poetry keeps its line structure and indentation.
-* Texts are parsed on first use and cached in memory (warmed in the background at startup).
-* Rendered PDFs are not cached; Typst is fast enough that this has not mattered.
-
-## Layout
-
-```
-src/bible_typeset/
-  usfx.py      USFX → verse-addressable pieces       library.py   catalogue, loading, selection
-  document.py  selection → blocks, title, plain text typeset.py   Typst subprocess (sandboxed temp dir)
-  app.py       FastAPI routes                         template/book.typ   the page design
-  static/index.html   the UI                          texts.toml          per-text settings
-nix/           package + NixOS module      flake.nix   dev shell, package, docker image
-tests/         pytest (parser, selection, API, real PDF rendering)
-```
+* Ranges stay within one book. Verse numbering differs between traditions in
+  places (Psalms, some Prophets), so a range valid in one translation may be
+  refused by another, by design.
+* Fonts: Latin, Greek and Cyrillic use Libertinus Serif; CJK uses Noto Serif CJK
+  (SC/TC/JP/KR chosen from the metadata); other scripts rely on Noto per-glyph
+  fallback, which is untested here.
+* The Nix files (flake, package, module, image) have not been evaluated; the
+  Python and Typst pipeline has, against a real eBible zip.

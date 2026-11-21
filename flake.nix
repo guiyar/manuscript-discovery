@@ -1,5 +1,5 @@
 {
-  description = "Typeset any verse range of eBible.org texts as PDF, with optional parallel columns";
+  description = "Manuscript Discovery: set any passage of eBible.org texts as a clean manuscript for study";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
@@ -18,13 +18,14 @@
       packages = forAllSystems (
         pkgs:
         let
-          # The fonts are part of the environment, so output no longer depends on whatever
-          # happens to be installed on the host. Libertinus Serif covers Latin and polytonic
-          # Greek; Noto Serif CJK covers Chinese/Japanese/Korean.
+          # Fonts are part of the environment, so output never depends on what the host has
+          # installed. Libertinus Serif covers Latin, Greek and Cyrillic; Noto Serif CJK covers
+          # Chinese/Japanese/Korean; Noto supplies per-glyph fallback for other scripts.
           fonts = pkgs.symlinkJoin {
-            name = "bible-typeset-fonts";
+            name = "manuscript-discovery-fonts";
             paths = [
               pkgs.libertinus
+              pkgs.noto-fonts
               pkgs.noto-fonts-cjk-serif
             ];
           };
@@ -37,19 +38,20 @@
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           # nix build .#docker && docker load < result
           docker = pkgs.dockerTools.buildLayeredImage {
-            name = "bible-typeset";
+            name = "manuscript-discovery";
             tag = "latest";
             contents = [ app ];
             extraCommands = "mkdir -p tmp && chmod 1777 tmp";
             config = {
-              Cmd = [ "${app}/bin/bible-typeset" ];
+              Entrypoint = [ "${app}/bin/manuscript-discovery" ];
+              Cmd = [ "serve" ]; # or: ingest /sources
               User = "65534:65534";
               ExposedPorts."8000/tcp" = { };
               Volumes."/data" = { };
               Env = [
-                "BIBLE_DATA_DIR=/data"
-                "BIBLE_HOST=0.0.0.0"
-                "BIBLE_PORT=8000"
+                "MANUSCRIPT_DB_PATH=/data/library.sqlite"
+                "MANUSCRIPT_HOST=0.0.0.0"
+                "MANUSCRIPT_PORT=8000"
               ];
             };
           };
@@ -59,7 +61,7 @@
       apps = forAllSystems (pkgs: {
         default = {
           type = "app";
-          program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/bible-typeset";
+          program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/manuscript-discovery";
         };
       });
 
@@ -77,6 +79,7 @@
                   uvicorn
                   pydantic-settings
                   defusedxml
+                  pycountry
                   pytest
                   httpx
                 ]
@@ -87,11 +90,12 @@
               pkgs.pyright
               pkgs.ruff
             ];
-            BIBLE_FONT_DIR = "${fonts}/share/fonts";
+            MANUSCRIPT_FONT_DIR = "${fonts}/share/fonts";
             shellHook = ''
               export PYTHONPATH="$PWD/src''${PYTHONPATH:+:$PYTHONPATH}"
-              export BIBLE_DATA_DIR="''${BIBLE_DATA_DIR:-$PWD/data}"
-              echo "Put eBible *_usfx.zip files in $BIBLE_DATA_DIR, then: python -m bible_typeset"
+              export MANUSCRIPT_DB_PATH="''${MANUSCRIPT_DB_PATH:-$PWD/data/library.sqlite}"
+              echo "1) python -m manuscript_discovery ingest <folder of *_usfx.zip>"
+              echo "2) python -m manuscript_discovery"
             '';
           };
         }
