@@ -19,36 +19,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints
 from starlette.concurrency import run_in_threadpool
 
-from . import assets, diagnostics
+from . import __version__, assets, diagnostics
 from .document import Request, SelectionError, build_document
 from .library import Library, LibraryUnavailable, Translation, UnknownTranslation
+from .security import SecurityHeaders, content_security_policy
 from .settings import Settings
-from .typeset import Aborted, TypesetError, render_pdf, render_png
+from .typeset import Aborted, Busy, Gate, TypesetError, render_pdf, render_png
 
 log = logging.getLogger(__name__)
 TranslationId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]{1,64}$")]
 PreviewKey = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{32}$")]
-
-
-class NoSniff:
-    """Adds X-Content-Type-Options. Deliberately plain ASGI: Starlette's BaseHTTPMiddleware
-    hides client disconnects from endpoints, which would defeat is_disconnected()."""
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        async def send_with_header(message):
-            if message["type"] == "http.response.start":
-                message["headers"] = [
-                    *message.get("headers", []),
-                    (b"x-content-type-options", b"nosniff"),
-                ]
-            await send(message)
-
-        await self.app(
-            scope, receive, send_with_header if scope["type"] == "http" else send
-        )
 
 
 class Static(StaticFiles):
@@ -121,7 +101,7 @@ def _summary(t: Translation) -> dict:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     library = Library(settings.db_path)
-    gate = asyncio.Semaphore(settings.max_concurrent)
+    gate = Gate(settings.max_concurrent, settings.max_waiting)
     # Rendered previews, keyed by a hash of exactly what was rendered. Only touched from the
     # event loop, so no locking. Sized in bytes.
     previews: LRUCache = LRUCache(
@@ -151,23 +131,71 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await check
         library.close()
 
+    # No interactive API docs or schema: they load scripts from a CDN, which the CSP forbids, and a
+    # public site has no need to advertise its API.
     app = FastAPI(
         title="Manuscript Discovery",
+        version=__version__,
         lifespan=lifespan,
-        docs_url="/api/docs",
+        docs_url=None,
         redoc_url=None,
+        openapi_url=None,
     )
 
     @app.exception_handler(LibraryUnavailable)
     async def unavailable(_, exc: LibraryUnavailable):
         return JSONResponse({"detail": str(exc)}, status_code=503)
 
-    app.add_middleware(NoSniff)
+    @app.exception_handler(Busy)
+    async def busy(_, exc: Busy):
+        return JSONResponse(
+            {"detail": "The server is busy typesetting. Try again in a moment."},
+            status_code=503,
+            headers={"Retry-After": "5"},
+        )
+
+    root = settings.static_dir or assets.serving_root(Path(__file__).parent / "static")
+    index = root / "index.html"
+    app.add_middleware(
+        SecurityHeaders,
+        csp=content_security_policy(
+            index.read_text("utf-8") if index.is_file() else ""
+        ),
+    )
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz():
+        """Liveness: the process is up and the event loop is turning."""
+        return {"status": "ok"}
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz():
+        """Readiness: it can actually serve passages (a library with translations, and Typst)."""
+        problems = []
+        if not shutil.which(settings.typst_bin):
+            problems.append(f"Typst not found ({settings.typst_bin})")
+        try:
+            translations = await run_in_threadpool(library.count)
+            if translations == 0:
+                problems.append("the library has no translations")
+        except LibraryUnavailable as e:
+            translations = 0
+            problems.append(str(e))
+        return JSONResponse(
+            {"ready": not problems, "translations": translations, "problems": problems},
+            status_code=503 if problems else 200,
+        )
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return Response(
+            status_code=204, headers={"Cache-Control": "public, max-age=86400"}
+        )
 
     @app.get("/api/health")
     def health():
-        """Typst version and whether CJK text can be drawn in previews (None while still checking)."""
-        return app.state.health or {"status": "checking"}
+        """Version, Typst version, and whether CJK text can be drawn in previews (still checking at first)."""
+        return {"version": __version__, **(app.state.health or {"status": "checking"})}
 
     @app.get("/api/translations")
     def search(
@@ -289,9 +317,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     # Last, so every API route above wins; this serves the UI at "/".
-    root = settings.static_dir or assets.serving_root(Path(__file__).parent / "static")
     log.info(
-        "serving the UI from %s%s",
+        "manuscript-discovery %s: serving the UI from %s%s",
+        __version__,
         root,
         " (unminified source: run `manuscript-discovery build-assets`)"
         if root.name != "dist"

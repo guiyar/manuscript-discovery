@@ -4,16 +4,24 @@ build-backend = "hatchling.build"
 
 [project]
 name = "manuscript-discovery"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Set any passage of eBible.org texts as a clean manuscript for study, with optional parallel columns"
 requires-python = ">=3.11"
-dependencies = ["fastapi", "uvicorn", "pydantic-settings", "defusedxml", "pycountry", "cachetools"]
+# Floors are set by features used, not by testing every old release:
+#   fastapi 0.115: Query parameter models; uvicorn 0.30: proxy-header and graceful-shutdown options.
+dependencies = [
+  "fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.7", "pydantic-settings>=2.3",
+  "defusedxml>=0.7.1", "pycountry>=23.12", "cachetools>=5.3",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]
 
 [project.scripts]
 manuscript-discovery = "manuscript_discovery.__main__:main"
+
+[tool.hatch.version]
+path = "src/manuscript_discovery/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/manuscript_discovery"]

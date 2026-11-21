@@ -30,6 +30,16 @@ in
         whose hash is unchanged are skipped, so only new or changed translations cost time.
       '';
     };
+    settings = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = { };
+      example = {
+        trusted_proxies = "127.0.0.1";
+        max_waiting = "32";
+        log_level = "warning";
+      };
+      description = "Any other application setting, as MANUSCRIPT_<NAME> environment variables (see settings.py).";
+    };
     host = lib.mkOption {
       type = lib.types.str;
       default = "127.0.0.1";
@@ -52,7 +62,10 @@ in
         MANUSCRIPT_DB_PATH = cfg.dbPath;
         MANUSCRIPT_HOST = cfg.host;
         MANUSCRIPT_PORT = toString cfg.port;
-      };
+      }
+      // lib.mapAttrs' (
+        name: value: lib.nameValuePair "MANUSCRIPT_${lib.toUpper name}" value
+      ) cfg.settings;
       serviceConfig = {
         ExecStartPre = lib.optional (cfg.sourceDir != null) "${exe} ingest ${cfg.sourceDir}";
         ExecStart = "${exe} serve";

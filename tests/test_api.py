@@ -214,7 +214,7 @@ def test_health_reports_typst_and_cjk_capability(client):
         if body != {"status": "checking"}:
             break
         time.sleep(0.1)
-    assert set(body) == {"typst", "cjk_png", "ok"} and (
+    assert set(body) == {"version", "typst", "cjk_png", "ok"} and (
         body["typst"] is None or body["typst"].startswith("typst")
     )
 

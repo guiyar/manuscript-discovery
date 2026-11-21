@@ -1,9 +1,11 @@
 import argparse
 import logging
 import os
+import sys
 from pathlib import Path
 
 import uvicorn
+from pydantic import ValidationError
 
 from . import assets
 from .app import create_app
@@ -12,7 +14,6 @@ from .settings import Settings
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(prog="manuscript-discovery")
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("serve", help="run the web app (default)")
@@ -34,7 +35,20 @@ def main(argv: list[str] | None = None) -> int:
         "--force", action="store_true", help="re-read files even if unchanged"
     )
     args = parser.parse_args(argv)
-    settings = Settings()
+    try:
+        settings = Settings()
+    except (
+        ValidationError
+    ) as e:  # stop at once, naming each offending variable, rather than misbehave later
+        for err in e.errors():
+            print(
+                f"error: MANUSCRIPT_{str(err['loc'][0]).upper()}: {err['msg']}",
+                file=sys.stderr,
+            )
+        return 2
+    logging.basicConfig(
+        level=settings.log_level.upper(), format="%(levelname)s %(message)s"
+    )
 
     if args.cmd == "build-assets":
         written = assets.build(Path(__file__).parent / "static")
@@ -49,7 +63,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"{added} added or updated, {unchanged} unchanged, {len(failed)} failed")
         return 1 if failed else 0
-    uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
+    uvicorn.run(
+        create_app(settings),
+        host=settings.host,
+        port=settings.port,
+        log_level=settings.log_level,
+        # Behind a reverse proxy: take the client address from X-Forwarded-For, but only from the proxies
+        # named here, so a client reaching the port directly cannot forge it.
+        proxy_headers=True,
+        forwarded_allow_ips=settings.trusted_proxies,
+        server_header=False,  # do not advertise the server software
+        timeout_graceful_shutdown=15,  # let requests in flight finish on SIGTERM, then stop
+    )
     return 0
 
 

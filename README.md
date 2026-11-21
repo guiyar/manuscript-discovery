@@ -58,6 +58,42 @@ run while the app is serving.
 * Left out as editorial: section headings, footnotes, cross-references, Psalm
   descriptive titles.
 
+## Behind a reverse proxy
+
+The app is built to sit behind a proxy that terminates TLS and handles HSTS,
+compression and per-client rate limiting. What the app itself provides and
+expects:
+
+* **Security headers** on every response: a `Content-Security-Policy` that
+  allows exactly the page's own inline script and style by hash (no
+  `unsafe-inline`, no `unsafe-eval`, no framing, no external resources), plus
+  `nosniff`, `no-referrer`, `X-Frame-Options: DENY` and same-origin resource
+  policy. The proxy should add HSTS, not overwrite the CSP, and must not rewrite
+  the HTML (the hashes would stop matching). No `Server` header; no API docs or
+  schema.
+* **Load shedding.** Typst renders are CPU-bound, so at most `MAX_CONCURRENT`
+  (default: one per core) run at once, at most `MAX_WAITING` (16) queue behind
+  them, and the rest get `503` with `Retry-After: 5`, which the UI shows as
+  "busy". One render is killed after `TIMEOUT_S` (30), or at once if its client
+  leaves, so set the proxy's read timeout above that. Cached previews never
+  wait.
+* **Client address.** Set `MANUSCRIPT_TRUSTED_PROXIES` to the proxy's address
+  (default `127.0.0.1`) so `X-Forwarded-For` is honoured from it and from nobody
+  else; use `*` only when nothing else can reach the port. Without this, logs
+  and any proxy-side logic see the proxy's address.
+* **Probes.** `/healthz` is liveness (always 200 while the event loop turns).
+  `/readyz` is readiness: 200 once the library has translations and Typst is
+  present, otherwise 503 with the reasons. `/api/health` adds the version and
+  the CJK font self-test.
+* **Lifecycle.** SIGTERM finishes requests in flight (up to 15 s), then stops; a
+  Typst process is never left behind. Bad configuration exits with status 2
+  naming each offending `MANUSCRIPT_*` variable.
+* **One process.** The preview cache and the render gate live in the process, so
+  run a single worker and scale with cores (`MAX_CONCURRENT`) or replicas behind
+  the proxy.
+* **Logs** go to stderr at `MANUSCRIPT_LOG_LEVEL`. The access log records query
+  strings, which hold the passage and any custom title.
+
 ## Web assets
 
 `src/manuscript_discovery/static/index.html` is the readable source (one file:

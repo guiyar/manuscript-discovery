@@ -160,6 +160,9 @@ class Library:
         )
         return [_translation(r) for r in rows]
 
+    def count(self) -> int:
+        return self._conn().execute("SELECT count(*) FROM translation").fetchone()[0]
+
     def get(self, translation_id: str) -> Translation:
         row = (
             self._conn()

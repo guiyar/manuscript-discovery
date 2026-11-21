@@ -42,6 +42,8 @@
     border: 1px solid var(--line); border-radius: 2px; padding: .45rem .55rem;
   }
   .range { display: grid; grid-template-columns: 3.2rem 1fr 1fr; gap: .5rem; align-items: end; }
+  select + .range { margin-top: .8rem; }
+  .range + .range { margin-top: .6rem; }
   .range b { font: 600 .9rem var(--serif); color: var(--muted); padding-bottom: .55rem; }
   .range label { margin: 0 0 .2rem; font-size: .78rem; }
   .check { display: flex; gap: .6rem; align-items: baseline; color: var(--ink); margin: .5rem 0 0; font-size: .98rem; }
@@ -108,12 +110,12 @@
       <legend>Passage</legend>
       <label for="book">Book</label>
       <select id="book"></select>
-      <div class="range" style="margin-top:.8rem">
+      <div class="range">
         <b>From</b>
         <div><label for="c1">Chapter</label><input id="c1" type="number" min="1" inputmode="numeric"></div>
         <div><label for="v1">Verse</label><input id="v1" type="number" min="1" inputmode="numeric"></div>
       </div>
-      <div class="range" style="margin-top:.6rem">
+      <div class="range">
         <b>To</b>
         <div><label for="c2">Chapter</label><input id="c2" type="number" min="1" inputmode="numeric" placeholder="same"></div>
         <div><label for="v2">Verse</label><input id="v2" type="number" min="1" inputmode="numeric" placeholder="end"></div>
@@ -182,7 +184,9 @@ async function api(url, signal) {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const d = body.detail;
-    throw new Error((Array.isArray(d) ? d.map((x) => x.msg).join("; ") : d) || `Request failed (${res.status})`);
+    // 429 usually comes from the proxy's rate limit and is not our JSON; 503 from us says "busy" itself.
+    const busy = res.status === 429 ? "Too many requests. Wait a moment and try again." : null;
+    throw new Error((Array.isArray(d) ? d.map((x) => x.msg).join("; ") : d) || busy || `Request failed (${res.status})`);
   }
   return res;
 }
