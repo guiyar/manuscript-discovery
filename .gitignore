@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 result
 .pytest_cache/
+src/manuscript_discovery/static/dist/
+node_modules/

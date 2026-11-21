@@ -12,7 +12,7 @@ import asyncio
 import logging
 
 from .settings import Settings
-from .typeset import TypesetError, _compile
+from .typeset import TypesetError, _compile, finish
 from .typography import CJK_FONTS
 
 log = logging.getLogger(__name__)
@@ -39,9 +39,9 @@ async def _version(settings: Settings) -> str | None:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        out, _ = await asyncio.wait_for(proc.communicate(), 10)
+        out, _ = await finish(proc, 10)
         return out.decode().strip() or None
-    except (OSError, asyncio.TimeoutError):
+    except (OSError, TypesetError):
         return None
 
 

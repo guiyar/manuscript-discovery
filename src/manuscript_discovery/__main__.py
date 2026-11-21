@@ -5,6 +5,7 @@ from pathlib import Path
 
 import uvicorn
 
+from . import assets
 from .app import create_app
 from .ingest import ingest_paths
 from .settings import Settings
@@ -15,6 +16,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="manuscript-discovery")
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("serve", help="run the web app (default)")
+    sub.add_parser(
+        "build-assets",
+        help="minify the web UI into static/dist (needs `minify` on PATH)",
+    )
     ing = sub.add_parser(
         "ingest", help="add or refresh translations from eBible *_usfx.zip files"
     )
@@ -31,6 +36,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     settings = Settings()
 
+    if args.cmd == "build-assets":
+        written = assets.build(Path(__file__).parent / "static")
+        print(
+            f"minified {len(written)} file(s): "
+            + ", ".join(f"{p.name} ({p.stat().st_size} B)" for p in written)
+        )
+        return 0
     if args.cmd == "ingest":
         added, unchanged, failed = ingest_paths(
             args.paths, args.db or settings.db_path, args.jobs, args.force

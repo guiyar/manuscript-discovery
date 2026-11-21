@@ -2,6 +2,7 @@
   lib,
   python3Packages,
   typst,
+  minify,
   fonts,
 }:
 
@@ -12,6 +13,10 @@ python3Packages.buildPythonApplication {
   src = lib.cleanSource ../.;
 
   build-system = [ python3Packages.hatchling ];
+  # `minify` runs in the wheel build hook (hatch_build.py). Without it the build would quietly ship the
+  # readable source, so this build insists on it.
+  nativeBuildInputs = [ minify ];
+  env.MANUSCRIPT_REQUIRE_MINIFY = "1";
   dependencies = with python3Packages; [
     fastapi
     uvicorn
@@ -38,6 +43,10 @@ python3Packages.buildPythonApplication {
     export MANUSCRIPT_EXPECT_CJK=1
   '';
   pythonImportsCheck = [ "manuscript_discovery" ];
+  postInstallCheck = ''
+    test -s $out/${python3Packages.python.sitePackages}/manuscript_discovery/static/dist/index.html \
+      || { echo "the minified UI is missing from the installed package"; exit 1; }
+  '';
 
   meta = {
     description = "Set any passage of eBible.org texts as a clean manuscript for study";

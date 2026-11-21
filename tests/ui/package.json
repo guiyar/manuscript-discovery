@@ -1,0 +1,8 @@
+{
+  "name": "manuscript-discovery-ui-tests",
+  "private": true,
+  "type": "module",
+  "description": "Drives the real web UI in jsdom against a real server. Run by tests/test_ui.py; `npm test` works too when UI_BASE_URL points at a running server.",
+  "scripts": { "test": "node --test --test-concurrency=1" },
+  "devDependencies": { "jsdom": "^27.0.0" }
+}

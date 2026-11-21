@@ -18,6 +18,10 @@ manuscript-discovery = "manuscript_discovery.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/manuscript_discovery"]
 
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["ui: browser-less UI tests (Node + jsdom); run with `npm ci` done in tests/ui"]

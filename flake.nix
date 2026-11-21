@@ -87,6 +87,8 @@
                 ]
               ))
               pkgs.typst
+              pkgs.minify # builds the minified UI (manuscript-discovery build-assets)
+              pkgs.nodejs # UI tests: cd tests/ui && npm ci
               pkgs.poppler-utils # pdftotext / pdftoppm for inspecting output
               # Development Tools
               pkgs.pyright
@@ -97,7 +99,9 @@
               export PYTHONPATH="$PWD/src''${PYTHONPATH:+:$PYTHONPATH}"
               export MANUSCRIPT_DB_PATH="''${MANUSCRIPT_DB_PATH:-$PWD/data/library.sqlite}"
               echo "1) python -m manuscript_discovery ingest <folder of *_usfx.zip>"
-              echo "2) python -m manuscript_discovery"
+              echo "2) python -m manuscript_discovery            (serves the readable UI source)"
+              echo "   python -m manuscript_discovery build-assets   (then it serves the minified build)"
+              echo "3) pytest   (UI tests need once: cd tests/ui && npm ci)"
             '';
           };
         }

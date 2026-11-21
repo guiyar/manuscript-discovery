@@ -12,7 +12,7 @@ from manuscript_discovery.library import Library
 BOM = "\ufeff"
 
 
-def usfx(lang: str, v: dict[str, str], eph2: bool = True) -> str:
+def usfx(lang: str, v: dict[str, str], eph2: bool = True, gen: bool = False) -> str:
     chapter2 = (
         f"""<c id="2" />
 <p style="p"><v id="1" bcv="EPH.2.1" />{v["5"]}
@@ -24,8 +24,33 @@ def usfx(lang: str, v: dict[str, str], eph2: bool = True) -> str:
         if eph2
         else ""
     )
+    genesis = (
+        """<book id="GEN"><id id="GEN">Genesis
+</id><toc level="2">Genesis
+</toc><c id="1" />
+<p style="p"><v id="1" bcv="GEN.1.1" />In the beginning God created the heaven and the earth.
+<ve />
+<v id="2" bcv="GEN.1.2" />And the earth was without form, and void; and darkness was upon the face of the deep.
+<ve />
+<v id="3" bcv="GEN.1.3" />And God said, Let there be light: and there was light.
+<ve />
+</p>
+<c id="2" />
+<p style="p"><v id="1" bcv="GEN.2.1" />Thus the heavens and the earth were finished, and all the host of them.
+<ve />
+<v id="2" bcv="GEN.2.2" />And on the seventh day God ended his work which he had made.
+<ve />
+<v id="3" bcv="GEN.2.3" />And God blessed the seventh day, and sanctified it.
+<ve />
+<v id="4" bcv="GEN.2.4" />These are the generations of the heavens and of the earth when they were created.
+<ve />
+</p></book>
+"""
+        if gen
+        else ""
+    )
     return f"""{BOM}<?xml version="1.0" encoding="utf-8"?><usfx xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><languageCode>{lang}</languageCode>
-<book id="EPH"><id id="EPH">Ephesians
+{genesis}<book id="EPH"><id id="EPH">Ephesians
 </id><h>Ephesians
 </h><toc level="1">THE EPISTLE TO THE EPHESIANS
 </toc><toc level="2">{v.get("name", "Ephesians")}
@@ -122,7 +147,7 @@ ZH = dict(
 
 ZIPS = {
     "eng-kjv2006": (
-        usfx("eng", EN),
+        usfx("eng", EN, gen=True),
         dbl("King James Version", "KJV", "eng", "English", "Latin", "LTR", "GB", PD),
         "eng-kjv2006 Scripture is in the Public Domain.",
     ),

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
 
     db_path: Path = Path("library.sqlite")
     font_dir: Path | None = None  # if set, ONLY these fonts are used (reproducible)
+    static_dir: Path | None = (
+        None  # default: the minified build if present, else the readable source
+    )
     typst_bin: str = "typst"
     max_verses: int = 3000  # largest selection accepted
     max_concurrent: int = Field(

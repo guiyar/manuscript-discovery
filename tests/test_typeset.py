@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import os
 import stat
 import time
@@ -107,3 +108,71 @@ def test_a_render_that_takes_too_long_is_killed(tmp_path):
         )
     time.sleep(0.2)
     assert not alive(int(pidfile.read_text()))
+
+
+def leaked_processes(marker: str) -> list[int]:
+    """Live processes whose command line contains the marker (read from /proc, Linux only)."""
+    pids = []
+    for entry in os.scandir("/proc"):
+        if entry.name.isdigit():
+            try:
+                with open(f"/proc/{entry.name}/cmdline", "rb") as f:
+                    if marker.encode() in f.read():
+                        pids.append(int(entry.name))
+            except OSError:
+                pass
+    return pids
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason="needs /proc")
+def test_cancelling_at_any_moment_never_leaves_typst_running(tmp_path):
+    """Including the few milliseconds while the process is still starting, when there is no handle yet."""
+    marker = f"sleep {os.getpid()}.5"  # unique to this test run
+    script = tmp_path / "typst"
+    script.write_text(f"#!/bin/sh\nexec {marker}\n")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+    async def scenario(delay):
+        task = asyncio.create_task(
+            render_png({}, Settings(typst_bin=str(script)), asyncio.Semaphore(1))
+        )
+        await asyncio.sleep(delay)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    for delay in (0, 0.0005, 0.001, 0.002, 0.004, 0.008, 0.016, 0.03, 0.06):
+        for _ in range(4):
+            run(scenario(delay))
+    time.sleep(0.3)
+    assert leaked_processes(marker) == [], (
+        "a Typst process outlived its cancelled request"
+    )
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc"), reason="needs /proc")
+@pytest.mark.filterwarnings(
+    "error::pytest.PytestUnraisableExceptionWarning", "error::ResourceWarning"
+)
+def test_cancelling_the_startup_font_check_leaves_nothing_running(tmp_path):
+    """The self-test runs in the background and is cancelled at shutdown, possibly mid-run."""
+    from manuscript_discovery import diagnostics
+
+    marker = f"sleep {os.getpid()}.7"
+    script = tmp_path / "typst"
+    script.write_text(
+        f"#!/bin/sh\nexec {marker}\n"
+    )  # takes a long time whatever it is asked
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+    async def scenario():
+        task = asyncio.create_task(diagnostics.run(Settings(typst_bin=str(script))))
+        await asyncio.sleep(0.4)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    run(scenario())
+    gc.collect()  # an abandoned process transport would complain here
+    time.sleep(0.3)
+    assert leaked_processes(marker) == []

@@ -8,17 +8,18 @@ import logging
 import shutil
 import time
 from contextlib import asynccontextmanager
-from importlib import resources
+from pathlib import Path
 from typing import Annotated, Literal, NamedTuple
 
 from cachetools import LRUCache
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi import Request as HttpRequest
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints
 from starlette.concurrency import run_in_threadpool
 
-from . import diagnostics
+from . import assets, diagnostics
 from .document import Request, SelectionError, build_document
 from .library import Library, LibraryUnavailable, Translation, UnknownTranslation
 from .settings import Settings
@@ -48,6 +49,16 @@ class NoSniff:
         await self.app(
             scope, receive, send_with_header if scope["type"] == "http" else send
         )
+
+
+class Static(StaticFiles):
+    """Serves the UI. StaticFiles supplies ETag and Last-Modified and answers conditional requests with
+    304; `no-cache` makes browsers use them on every load, so a new release is picked up at once."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 class Preview(NamedTuple):
@@ -152,11 +163,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse({"detail": str(exc)}, status_code=503)
 
     app.add_middleware(NoSniff)
-
-    @app.get("/", include_in_schema=False)
-    def index():
-        page = resources.files("manuscript_discovery").joinpath("static/index.html")
-        return FileResponse(str(page), media_type="text/html; charset=utf-8")
 
     @app.get("/api/health")
     def health():
@@ -282,4 +288,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
 
+    # Last, so every API route above wins; this serves the UI at "/".
+    root = settings.static_dir or assets.serving_root(Path(__file__).parent / "static")
+    log.info(
+        "serving the UI from %s%s",
+        root,
+        " (unminified source: run `manuscript-discovery build-assets`)"
+        if root.name != "dist"
+        else "",
+    )
+    app.mount("/", Static(directory=root, html=True), name="ui")
     return app

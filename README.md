@@ -15,6 +15,7 @@ git add -A                  # flakes only see git-tracked files
 nix develop                 # Python, Typst and fonts, all pinned
 python -m manuscript_discovery ingest ~/ebible   # a folder of *_usfx.zip files; re-run any time
 python -m manuscript_discovery                   # http://127.0.0.1:8000
+(cd tests/ui && npm ci)                          # once, for the UI tests
 pytest
 ```
 
@@ -56,6 +57,45 @@ run while the app is serving.
   full statement.
 * Left out as editorial: section headings, footnotes, cross-references, Psalm
   descriptive titles.
+
+## Web assets
+
+`src/manuscript_discovery/static/index.html` is the readable source (one file:
+markup, CSS and JS). It is minified before it is served: about 22 kB to 16 kB,
+and 7.4 kB to 5.9 kB gzipped, with identifiers shortened. The tool is
+[tdewolff/minify](https://github.com/tdewolff/minify) (the one Hugo uses), run
+by `assets.py` into `static/dist/`, which is generated and gitignored.
+
+* **Wheel and Nix builds** minify automatically (`hatch_build.py`). The Nix
+  build sets `MANUSCRIPT_REQUIRE_MINIFY`, so it fails rather than silently
+  shipping the unminified file, and checks that `dist/index.html` is in the
+  installed package. A plain `pip install` without `minify` on PATH still works
+  and ships the source.
+* **At runtime** the app serves `dist/` if it exists, otherwise the source, and
+  logs which. In development that means edits show up immediately; run
+  `manuscript-discovery build-assets` to try the minified build.
+* Served with `ETag` and `Cache-Control: no-cache`, so a browser revalidates (a
+  304 costs nothing) and a new release is picked up at once. Compression
+  (gzip/brotli) is left to the reverse proxy.
+
+## Tests
+
+`pytest` runs everything. The UI tests (`tests/ui`, Node's built-in runner with
+jsdom) drive the real page against real servers, and `tests/test_ui.py` runs
+them twice: against the readable source and against the **minified build**, so a
+minifier that breaks the page is caught. They cover the first-visit defaults,
+that switching translations never moves the passage (and what is shown when a
+translation lacks it), the live preview (a real screen-resolution PNG, debounced
+to one request per burst of edits, nothing requested for an invalid passage),
+and the line-spacing control. Mutation-checked: breaking either the spacing link
+or the passage-preservation logic in the minified build makes the suite fail.
+
+One-time setup: `cd tests/ui && npm ci`. Without it, or without Node, Typst or
+`minify`, the affected tests skip with a reason. `pytest -m "not ui"` skips
+them; `npm test` inside `tests/ui` runs them against any running server
+(`UI_BASE_URL=http://127.0.0.1:8000`). The Nix build does not run them, because
+that would need the npm dependency hash, which I could not compute without Nix;
+it does run the asset-build tests.
 
 ## Fonts, and the preview showing empty boxes for CJK
 

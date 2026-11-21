@@ -28,20 +28,22 @@ class Aborted(Exception):
     """The client went away while waiting its turn, so no work was started."""
 
 
-async def _finish(
+async def finish(
     proc: asyncio.subprocess.Process,
     timeout_s: float,
-    abort: Callable[[], Awaitable[bool]] | None,
-) -> bytes:
-    """Wait for Typst and return its stderr. If the client leaves mid-render, the time runs out,
-    or this task is cancelled, kill the process: an abandoned render must not keep a core busy."""
+    abort: Callable[[], Awaitable[bool]] | None = None,
+) -> tuple[bytes, bytes]:
+    """Wait for a Typst process and return (stdout, stderr). If the client leaves mid-render, the
+    time runs out, or this task is cancelled, kill the process: an abandoned render must not keep a
+    core busy, and a process must never be left for the garbage collector to find. Every wait on a
+    Typst process goes through here."""
     pending = asyncio.ensure_future(proc.communicate())
     deadline = time.monotonic() + timeout_s
     try:
         while True:
             done, _ = await asyncio.wait({pending}, timeout=0.1)
             if done:
-                return pending.result()[1]
+                return pending.result()
             if time.monotonic() > deadline:
                 raise TypesetError("Typesetting timed out")
             if abort is not None and await abort():
@@ -109,7 +111,7 @@ async def _compile(
                 raise TypesetError(
                     f"Typst executable not found: {settings.typst_bin}"
                 ) from e
-            text = (await _finish(proc, settings.timeout_s, abort)).decode(
+            text = (await finish(proc, settings.timeout_s, abort))[1].decode(
                 "utf-8", "replace"
             )
             if proc.returncode != 0:
