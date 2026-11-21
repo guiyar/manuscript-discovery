@@ -1,3 +1,4 @@
+import contextlib
 import shutil
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
@@ -105,13 +106,14 @@ def test_reingest_is_incremental(zips, tmp_path):
         len(lib.outline("tiny")) == 2 and len(lib.search()) == 5
     )  # replaced, not duplicated
     lib.close()
-    conn = sqlite3.connect(db)
-    assert (
-        conn.execute(
-            "SELECT count(*) FROM chapter WHERE translation_id='tiny'"
-        ).fetchone()[0]
-        == 2
-    )
+    # An unclosed connection is a ResourceWarning on Python 3.13.
+    with contextlib.closing(sqlite3.connect(db)) as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM chapter WHERE translation_id='tiny'"
+            ).fetchone()[0]
+            == 2
+        )
 
 
 def test_parallel_workers_and_a_bad_file_does_not_stop_the_rest(zips, tmp_path):
