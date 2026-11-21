@@ -1,12 +1,15 @@
 # Manuscript Discovery
 
-Set any contiguous passage of an [eBible.org](https://ebible.org) text as a
-clean manuscript for [Manuscript
-Discovery](https://fionapfennigwerth.info/manuscript-discovery/) study: no
+Set any contiguous passage of an [eBible.org] text as a
+clean manuscript for [Manuscript Discovery] study: no
 chapter or verse numbers, no headings, no footnotes, nothing added to the text.
 Only a title (the passage reference), page numbers and line numbers, with room
 around the text for notes. Output is a typeset PDF or plain text, optionally
 with a second translation in a parallel column.
+
+[eBible.org]: https://ebible.org
+[Manuscript Discovery]: https://fionapfennigwerth.info/manuscript-discovery/
+
 
 ## Quick start (Nix)
 
@@ -19,17 +22,18 @@ python -m manuscript_discovery                   # http://127.0.0.1:8000
 pytest
 ```
 
+
 ## Getting texts
 
 Download the **USFX** zip of each translation (`<id>_usfx.zip`, linked from its
 eBible page) into one folder and run `ingest` on the folder. Everything else is
 read from inside each zip:
 
-| Read from | Used for |
-|---|---|
-| `*_usfx.xml` | the text, its paragraph and poetry markup, and the translation's own book names |
-| `*metadata.xml` (DBL) | name, abbreviation, language, script, direction, country, copyright statement |
-| `*VernacularAdditional.xml` | the one-line licence notice, when the statement's first line is long |
+| Read from                   | Used for                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `*_usfx.xml`                | the text, its paragraph and poetry markup, and the translation's own book names |
+| `*metadata.xml` (DBL)       | name, abbreviation, language, script, direction, country, copyright statement   |
+| `*VernacularAdditional.xml` | the one-line licence notice, when the statement's first line is long            |
 
 Nothing is kept in a hand-maintained list. Fonts, hyphenation language and text
 direction are derived from the language and script in the metadata. Every
@@ -41,22 +45,24 @@ notice.
 (`-j`), and replaces each translation in a single transaction, so it is safe to
 run while the app is serving.
 
+
 ## What the manuscript contains
 
-* **Continuous text** by default, which is the method's purest form. **Paragraph
-  breaks** (off by default) and **poetry lines** (on by default) follow exactly
-  what the source marks (USFX `p`/`q` styles); each is a toggle, and a toggle
-  only ever merges, so nothing is invented.
-* **Line numbers** restart on each page. With two translations only the first is
-  numbered: Typst counts every numbered line on a page and draws all the numbers
-  in one margin, so numbering both columns scrambled them whenever the columns'
-  lines differ in height (Chinese beside English or Greek).
-* **Space for notes**: wide margins and open line spacing, **1.5 lines or
-  double** (the choice belongs to, and is disabled with, "Space for notes").
-* **Copyright notice** at the end of each text: name, one-line licence notice,
-  full statement.
-* Left out as editorial: section headings, footnotes, cross-references, Psalm
-  descriptive titles.
+- **Continuous text** by default, which is the method's purest form. **Paragraph
+    breaks** (off by default) and **poetry lines** (on by default) follow
+    exactly what the source marks (USFX `p`/`q` styles); each is a toggle, and
+    a toggle only ever merges, so nothing is invented.
+- **Line numbers** restart on each page. With two translations only the first is
+    numbered: Typst counts every numbered line on a page and draws all the
+    numbers in one margin, so numbering both columns scrambled them whenever
+    the columns' lines differ in height (Chinese beside English or Greek).
+- **Space for notes**: wide margins and open line spacing, **1.5 lines or
+    double** (the choice belongs to, and is disabled with, “Space for notes”).
+- **Copyright notice** at the end of each text: name, one-line licence notice,
+    full statement.
+- Left out as editorial: section headings, footnotes, cross-references, Psalm
+    descriptive titles.
+
 
 ## Behind a reverse proxy
 
@@ -64,55 +70,59 @@ The app is built to sit behind a proxy that terminates TLS and handles HSTS,
 compression and per-client rate limiting. What the app itself provides and
 expects:
 
-* **Security headers** on every response: a `Content-Security-Policy` that
-  allows exactly the page's own inline script and style by hash (no
-  `unsafe-inline`, no `unsafe-eval`, no framing, no external resources), plus
-  `nosniff`, `no-referrer`, `X-Frame-Options: DENY` and same-origin resource
-  policy. The proxy should add HSTS, not overwrite the CSP, and must not rewrite
-  the HTML (the hashes would stop matching). No `Server` header; no API docs or
-  schema.
-* **Load shedding.** Typst renders are CPU-bound, so at most `MAX_CONCURRENT`
-  (default: one per core) run at once, at most `MAX_WAITING` (16) queue behind
-  them, and the rest get `503` with `Retry-After: 5`, which the UI shows as
-  "busy". One render is killed after `TIMEOUT_S` (30), or at once if its client
-  leaves, so set the proxy's read timeout above that. Cached previews never
-  wait.
-* **Client address.** Set `MANUSCRIPT_TRUSTED_PROXIES` to the proxy's address
-  (default `127.0.0.1`) so `X-Forwarded-For` is honoured from it and from nobody
-  else; use `*` only when nothing else can reach the port. Without this, logs
-  and any proxy-side logic see the proxy's address.
-* **Probes.** `/healthz` is liveness (always 200 while the event loop turns).
-  `/readyz` is readiness: 200 once the library has translations and Typst is
-  present, otherwise 503 with the reasons. `/api/health` adds the version and
-  the CJK font self-test.
-* **Lifecycle.** SIGTERM finishes requests in flight (up to 15 s), then stops; a
-  Typst process is never left behind. Bad configuration exits with status 2
-  naming each offending `MANUSCRIPT_*` variable.
-* **One process.** The preview cache and the render gate live in the process, so
-  run a single worker and scale with cores (`MAX_CONCURRENT`) or replicas behind
-  the proxy.
-* **Logs** go to stderr at `MANUSCRIPT_LOG_LEVEL`. The access log records query
-  strings, which hold the passage and any custom title.
+- **Security headers** on every response: a `Content-Security-Policy` that
+    allows exactly the page's own inline script and style by hash (no
+    `unsafe-inline`, no `unsafe-eval`, no framing, no external resources), plus
+    `nosniff`, `no-referrer`, `X-Frame-Options: DENY` and same-origin resource
+    policy. The proxy should add HSTS, not overwrite the CSP, and must not
+    rewrite the HTML (the hashes would stop matching). No `Server` header; no
+    API docs or schema.
+- **Load shedding.** Typst renders are CPU-bound, so at most `MAX_CONCURRENT`
+    (default: one per core) run at once, at most `MAX_WAITING` (16) queue behind
+    them, and the rest get `503` with `Retry-After: 5`, which the UI shows as
+    “busy”. One render is killed after `TIMEOUT_S` (30), or at once if its
+    client leaves, so set the proxy's read timeout above that. Cached previews
+    never wait.
+- **Client address.** Set `MANUSCRIPT_TRUSTED_PROXIES` to the proxy's address
+    (default `127.0.0.1`) so `X-Forwarded-For` is honoured from it and from
+    nobody else; use `*` only when nothing else can reach the port. Without
+    this, logs and any proxy-side logic see the proxy's address.
+- **Probes.** `/healthz` is liveness (always 200 while the event loop turns).
+    `/readyz` is readiness: 200 once the library has translations and Typst is
+    present, otherwise 503 with the reasons. `/api/health` adds the version and
+    the CJK font self-test.
+- **Lifecycle.** SIGTERM finishes requests in flight (up to 15 s), then stops; a
+    Typst process is never left behind. Bad configuration exits with status 2
+    naming each offending `MANUSCRIPT_*` variable.
+- **One process.** The preview cache and the render gate live in the process, so
+    run a single worker and scale with cores (`MAX_CONCURRENT`) or replicas
+    behind the proxy.
+- **Logs** go to stderr at `MANUSCRIPT_LOG_LEVEL`. The access log records query
+    strings, which hold the passage and any custom title.
+
 
 ## Web assets
 
 `src/manuscript_discovery/static/index.html` is the readable source (one file:
 markup, CSS and JS). It is minified before it is served: about 22 kB to 16 kB,
 and 7.4 kB to 5.9 kB gzipped, with identifiers shortened. The tool is
-[tdewolff/minify](https://github.com/tdewolff/minify) (the one Hugo uses), run
+[tdewolff/minify] (the one Hugo uses), run
 by `assets.py` into `static/dist/`, which is generated and gitignored.
 
-* **Wheel and Nix builds** minify automatically (`hatch_build.py`). The Nix
-  build sets `MANUSCRIPT_REQUIRE_MINIFY`, so it fails rather than silently
-  shipping the unminified file, and checks that `dist/index.html` is in the
-  installed package. A plain `pip install` without `minify` on PATH still works
-  and ships the source.
-* **At runtime** the app serves `dist/` if it exists, otherwise the source, and
-  logs which. In development that means edits show up immediately; run
-  `manuscript-discovery build-assets` to try the minified build.
-* Served with `ETag` and `Cache-Control: no-cache`, so a browser revalidates (a
-  304 costs nothing) and a new release is picked up at once. Compression
-  (gzip/brotli) is left to the reverse proxy.
+- **Wheel and Nix builds** minify automatically (`hatch_build.py`). The Nix
+    build sets `MANUSCRIPT_REQUIRE_MINIFY`, so it fails rather than silently
+    shipping the unminified file, and checks that `dist/index.html` is in the
+    installed package. A plain `pip install` without `minify` on PATH still
+    works and ships the source.
+- **At runtime** the app serves `dist/` if it exists, otherwise the source, and
+    logs which. In development that means edits show up immediately; run
+    `manuscript-discovery build-assets` to try the minified build.
+- Served with `ETag` and `Cache-Control: no-cache`, so a browser revalidates (a
+    304 costs nothing) and a new release is picked up at once. Compression
+    (gzip/brotli) is left to the reverse proxy.
+
+[tdewolff/minify]: https://github.com/tdewolff/minify
+
 
 ## Tests
 
@@ -133,12 +143,13 @@ them; `npm test` inside `tests/ui` runs them against any running server
 that would need the npm dependency hash, which I could not compute without Nix;
 it does run the asset-build tests.
 
+
 ## Fonts, and the preview showing empty boxes for CJK
 
 The preview is PNG, and **Typst before 0.15 draws empty boxes in PNG export for
 the variable Noto Serif CJK font that nixpkgs ships, while the same document
-exports to PDF perfectly.** Nothing errors, so it looks like Chinese "does not
-render in the preview". Reproduced with Typst 0.12 and 0.14.2; 0.15 is fine, and
+exports to PDF perfectly.** Nothing errors, so it looks like Chinese “does not
+render in the preview”. Reproduced with Typst 0.12 and 0.14.2; 0.15 is fine, and
 static fonts work on all of them. The Nix font set therefore pins the *static*
 Noto Serif CJK (`nix/cjk-font.nix`) instead of `noto-fonts-cjk-serif`.
 
@@ -148,22 +159,23 @@ family fails, and `GET /api/health` reports the Typst version and the result.
 The Nix build runs the same check against its own font set, so a font closure
 that cannot draw CJK fails `nix flake check` rather than a user's preview.
 
+
 ## Live preview
 
 The page preview follows every change. It is rendered by Typst as low-resolution
 PNGs (96 ppi, first 6 pages, for the screen; the PDF download is the
 print-quality output). To keep that cheap:
 
-* the browser waits 450 ms after the last change and cancels any request still
-  in flight;
-* previews are cached by a hash of exactly what was rendered, so returning to
-  earlier settings is free;
-* layout is cut off after about six pages' worth of text, so cost does not grow
-  with the selection;
-* the server starts no render for a client that has already left, and kills one
-  in progress;
-* at most one Typst process per CPU core runs at a time
-  (`MANUSCRIPT_MAX_CONCURRENT`).
+- the browser waits 450 ms after the last change and cancels any request still
+    in flight;
+- previews are cached by a hash of exactly what was rendered, so returning to
+    earlier settings is free;
+- layout is cut off after about six pages' worth of text, so cost does not grow
+    with the selection;
+- the server starts no render for a client that has already left, and kills one
+    in progress;
+- at most one Typst process per CPU core runs at a time
+    (`MANUSCRIPT_MAX_CONCURRENT`).
 
 Measured on a single CPU core (real KJV, distinct requests so nothing is
 cached): a chapter previews in about 90 ms of work (≈13/s), a whole epistle in
@@ -176,6 +188,7 @@ under production traffic; the server logs every render and every abandoned one
 at INFO so real load can be watched. Rate limiting per client belongs in the
 reverse proxy.
 
+
 ## Choosing between translations
 
 The passage is independent of the translation. Switching translations never
@@ -185,41 +198,44 @@ exactly what is missing, disables the buttons, and offers an explicit **Fit
 passage to these translations** action. The server enforces the same rule and
 never clamps.
 
+
 ## Deployment
 
-* **NixOS:** `services.manuscript-discovery = { enable = true; sourceDir =
-  "/srv/ebible"; };` ingests new or changed zips before each start. Put a
-  reverse proxy in front for TLS.
-* **Docker, built by Nix:** `nix build .#docker && docker load < result`, then
-  `docker run --rm -v md:/data -v ~/ebible:/sources:ro manuscript-discovery
-  ingest /sources` and `docker run -p 8000:8000 -v md:/data
-  manuscript-discovery`.
+- **NixOS:**
+    `services.manuscript-discovery = { enable = true; sourceDir = "/srv/ebible"; };`
+    ingests new or changed zips before each start. Put a reverse proxy in front
+    for TLS.
+- **Docker, built by Nix:** `nix build .#docker && docker load < result`, then
+    `docker run --rm -v md:/data -v ~/ebible:/sources:ro manuscript-discovery ingest /sources`
+    and `docker run -p 8000:8000 -v md:/data manuscript-discovery`.
 
 Settings are `MANUSCRIPT_*` environment variables (see `settings.py`).
 
+
 ## Design
 
-* **Storage:** one SQLite file. Per translation, one row per chapter holding
-  zlib-compressed JSON, plus small `book` rows (verse counts, names) so outlines
-  never decode text. Nothing is cached in Python, so memory does not grow with
-  the number of translations. A real KJV is ~4.8 MB and reads a 176-verse range
-  in well under a millisecond.
-* **Typst, not XeLaTeX:** one small binary, millisecond compiles,
-  OpenType/hyphenation/CJK support, and text reaches it as JSON data, never as
-  source, so there is nothing to escape or inject.
-* **Boundaries:** `usfx`/`metadata` (read files) → `library` (SQLite) →
-  `document` (selection to blocks) → `typeset` (Typst). `typography` derives
-  per-text settings. There are no abstract interfaces yet; add one when a second
-  implementation exists.
+- **Storage:** one SQLite file. Per translation, one row per chapter holding
+    zlib-compressed JSON, plus small `book` rows (verse counts, names) so
+    outlines never decode text. Nothing is cached in Python, so memory does not
+    grow with the number of translations. A real KJV is ~4.8 MB and reads a
+    176-verse range in well under a millisecond.
+- **Typst, not XeLaTeX:** one small binary, millisecond compiles,
+    OpenType/hyphenation/CJK support, and text reaches it as JSON data, never as
+    source, so there is nothing to escape or inject.
+- **Boundaries:** `usfx`/`metadata` (read files) → `library` (SQLite) →
+    `document` (selection to blocks) → `typeset` (Typst). `typography` derives
+    per-text settings. There are no abstract interfaces yet; add one when a
+    second implementation exists.
+
 
 ## Limitations
 
-* Ranges stay within one book. Verse numbering differs between traditions in
-  places (Psalms, some Prophets), so a range valid in one translation may be
-  refused by another, by design.
-* Fonts: Latin, Greek and Cyrillic use Libertinus Serif; CJK uses the static
-  Noto Serif CJK (SC/TC/JP/KR chosen from the metadata; some zips mislabel the
-  script, e.g. a Chinese text with `Latin`, so the language code decides); other
-  scripts rely on Noto per-glyph fallback, which is untested here.
-* The Nix files (flake, package, module, image) have not been evaluated; the
-  Python and Typst pipeline has, against a real eBible zip.
+- Ranges stay within one book. Verse numbering differs between traditions in
+    places (Psalms, some Prophets), so a range valid in one translation may be
+    refused by another, by design.
+- Fonts: Latin, Greek and Cyrillic use Libertinus Serif; CJK uses the static
+    Noto Serif CJK (SC/TC/JP/KR chosen from the metadata; some zips mislabel the
+    script, e.g. a Chinese text with `Latin`, so the language code decides);
+    other scripts rely on Noto per-glyph fallback, which is untested here.
+- The Nix files (flake, package, module, image) have not been evaluated; the
+    Python and Typst pipeline has, against a real eBible zip.

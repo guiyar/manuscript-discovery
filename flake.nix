@@ -91,6 +91,7 @@
               pkgs.nodejs # UI tests: cd tests/ui && npm ci
               pkgs.poppler-utils # pdftotext / pdftoppm for inspecting output
               # Development Tools
+              pkgs.hongdown
               pkgs.pyright
               pkgs.ruff
             ];

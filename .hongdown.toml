@@ -1,0 +1,20 @@
+no_inherit = true
+include = [ "README.md" ]
+
+[heading]
+setext_h1 = false
+setext_h2 = false
+
+[unordered_list]
+leading_spaces = 0
+trailing_spaces = 1
+indent_width = 2
+
+[code_block]
+fence_char = "`"
+min_fence_length = 3
+space_after_fence = false
+
+[punctuation]
+en_dash = "--"
+em_dash = "---"
