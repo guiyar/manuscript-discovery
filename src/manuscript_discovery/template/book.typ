@@ -6,9 +6,12 @@
 #let primary = d.texts.at(0)
 #let parallel = d.texts.len() > 1
 
-// "Study" layout: wide margins and open line spacing leave room for notes.
+// "Study" layout: wide margins and open line spacing (chosen in Python) leave room for notes.
 #let side = if not d.notes { 2.6cm } else if parallel { 2.8cm } else { 4.2cm }
-#let leading = if d.notes { 1.05em } else { 0.68em }
+#let leading = d.leading * 1em
+// Full-width glyphs need a little more air in plain layout; with notes the spacing is already open,
+// and adding more would make the columns of a parallel pair drift apart.
+#let cjk-extra = if d.notes { 0em } else { 0.25em }
 
 #set document(title: d.title)
 #set page(
@@ -27,12 +30,10 @@
   },
 )
 
-// Line numbers restart on every page. In parallel mode they count the first text's lines.
-#set par.line(
-  numbering: if d.line_numbers { n => text(size: 0.7em, fill: luma(115), str(n)) } else { none },
-  number-clearance: 1em,
-  numbering-scope: "page",
-)
+// Line numbers restart on every page. Typst counts every numbered line on the page and draws all
+// numbers in one margin, so only the first text is numbered (see `numbered` in the data).
+#let line-number = n => text(size: 0.7em, fill: luma(115), str(n))
+#set par.line(numbering: none, number-clearance: 1em, numbering-scope: "page")
 
 // Lines of poetry: hanging indent so wrapped lines stay inside their level. No stanza gaps.
 #let poetry(lines) = {
@@ -67,10 +68,11 @@
     hyphenate: t.hyphenate,
     cjk-latin-spacing: auto,
   )
+  set par.line(numbering: if t.numbered { line-number } else { none })
   set par(
     justify: t.justify,
-    leading: if t.cjk { leading + 0.3em } else { leading },
-    spacing: if t.cjk { leading + 0.3em } else { leading },
+    leading: if t.cjk { leading + cjk-extra } else { leading },
+    spacing: if t.cjk { leading + cjk-extra } else { leading },
     first-line-indent: if t.cjk { 2em } else { 1.2em },
   )
   if t.heading != none {

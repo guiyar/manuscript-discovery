@@ -46,6 +46,10 @@
   .range label { margin: 0 0 .2rem; font-size: .78rem; }
   .check { display: flex; gap: .6rem; align-items: baseline; color: var(--ink); margin: .5rem 0 0; font-size: .98rem; }
   .check small { display: block; color: var(--muted); font-size: .8rem; line-height: 1.3; }
+  .sub { display: flex; gap: 1.4rem; margin: .1rem 0 .3rem 1.55rem; padding: .1rem 0 .1rem .8rem; border: 0; border-left: 2px solid var(--brass); }
+  .sub:disabled { opacity: .45; }
+  .sub .check { margin: 0; font-size: .95rem; }
+  .sub legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   details { margin-bottom: 1.3rem; }
   summary { cursor: pointer; font: 600 .8rem var(--serif); font-variant: small-caps; letter-spacing: .12em; color: var(--brass); }
   .actions { display: grid; gap: .5rem; }
@@ -124,6 +128,11 @@
       <label class="check"><input id="poetry" type="checkbox" checked><span>Poetry lines<small>only where the translation marks them</small></span></label>
       <label class="check"><input id="line_numbers" type="checkbox" checked><span>Line numbers<small>restart each page; first translation only when parallel</small></span></label>
       <label class="check"><input id="notes" type="checkbox" checked><span>Space for notes<small>wide margins and open line spacing</small></span></label>
+      <fieldset class="sub" id="spacingBox">
+        <legend>Line spacing for notes</legend>
+        <label class="check"><input type="radio" name="line_spacing" value="1.5" checked><span>1.5 lines</span></label>
+        <label class="check"><input type="radio" name="line_spacing" value="2"><span>Double</span></label>
+      </fieldset>
       <label class="check"><input id="colophon" type="checkbox" checked><span>Copyright notice<small>at the end of each text</small></span></label>
     </fieldset>
 
@@ -266,6 +275,7 @@ function fit() {
 }
 
 function check() {
+  $("spacingBox").disabled = !$("notes").checked;   // the spacing choice belongs to "Space for notes"
   const list = problems();
   const box = $("problems");
   box.hidden = !list.length;
@@ -313,6 +323,7 @@ function newBook() {                      // an explicit change of book starts t
 }
 
 /* ---- state lives in the URL, so reloads and shared links keep the passage and options ---- */
+const spacing = () => document.querySelector("input[name=line_spacing]:checked").value;
 const FIELDS = ["c1", "v1", "c2", "v2", "paper", "size", "title"];
 const TOGGLES = ["paragraphs", "poetry", "line_numbers", "notes", "colophon"];
 
@@ -323,6 +334,7 @@ function saveState() {
   if (book) p.set("book", book);
   for (const f of FIELDS) if ($(f).value) p.set(f, $(f).value);
   for (const f of TOGGLES) p.set(f, $(f).checked ? "1" : "0");
+  p.set("line_spacing", spacing());
   history.replaceState(null, "", `?${p}`);
 }
 
@@ -337,6 +349,7 @@ function query(format, download = false) {
   for (const f of ["paper", "size"]) p.set(f, $(f).value);
   if ($("title").value.trim()) p.set("title", $("title").value.trim());
   for (const f of TOGGLES) p.set(f, $(f).checked);
+  p.set("line_spacing", spacing());
   p.set("format", format);
   if (download) p.set("download", "true");
   return p;
@@ -417,6 +430,7 @@ $("download").addEventListener("click", async () => {
 
 $("book").addEventListener("change", newBook);
 for (const f of ["c1", "v1", "c2", "v2", "paper", "size", "title", ...TOGGLES]) $(f).addEventListener("input", check);
+for (const r of document.querySelectorAll("input[name=line_spacing]")) r.addEventListener("input", check);
 
 // What a first visit shows. Only a starting point: if the library lacks this translation, the
 // first translation's first chapter is used instead.
@@ -432,6 +446,7 @@ const FIRST_VISIT = { t1: "eng-kjv2006", book: "GEN", c1: 1, v1: 1, c2: 2, v2: 3
   }
   for (const f of FIELDS) if (saved.has(f)) $(f).value = saved.get(f);
   for (const f of TOGGLES) if (saved.has(f)) $(f).checked = saved.get(f) === "1";
+  for (const r of document.querySelectorAll("input[name=line_spacing]")) r.checked = r.value === (saved.get("line_spacing") || "1.5");
   try {
     const first = (await p1.load(""))[0];
     for (const [p, key] of [[p1, "t1"], [p2, "t2"]]) {

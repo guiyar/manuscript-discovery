@@ -97,6 +97,7 @@ def test_options_reach_the_document(client):
         ({"translation": ["a", "b", "c"]}, 422, None),
         ({"translation": "eng-kjv2006", "paper": "../etc"}, 422, None),
         ({"translation": "bad/id"}, 422, None),
+        ({"translation": "eng-kjv2006", "line_spacing": "3"}, 422, None),
     ],
 )
 def test_bad_requests_say_what_is_wrong(client, params, status, message):
@@ -203,3 +204,31 @@ def test_preview_errors_are_the_same_clear_ones(client):
 def test_pages_past_the_end_are_404(client):
     key = preview(client).json()["key"]
     assert client.get(f"/api/preview/{key}/99.png").status_code == 404
+
+
+def test_health_reports_typst_and_cjk_capability(client):
+    import time
+
+    for _ in range(50):
+        body = client.get("/api/health").json()
+        if body != {"status": "checking"}:
+            break
+        time.sleep(0.1)
+    assert set(body) == {"typst", "cjk_png", "ok"} and (
+        body["typst"] is None or body["typst"].startswith("typst")
+    )
+
+
+@pytest.mark.skipif(not HAS_TYPST, reason="typst not installed")
+@pytest.mark.parametrize("spacing", ["1.5", "2"])
+def test_both_line_spacings_typeset(client, spacing):
+    r = render(
+        client,
+        translation=["eng-kjv2006", "cmn2006"],
+        c1=1,
+        v1=1,
+        c2=2,
+        line_spacing=spacing,
+    )
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+    assert preview(client, line_spacing=spacing).status_code == 200

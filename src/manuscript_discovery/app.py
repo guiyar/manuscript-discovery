@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
 from starlette.concurrency import run_in_threadpool
 
+from . import diagnostics
 from .document import Request, SelectionError, build_document
 from .library import Library, LibraryUnavailable, Translation, UnknownTranslation
 from .settings import Settings
@@ -71,6 +72,7 @@ class RenderQuery(BaseModel):
     poetry: bool = True
     line_numbers: bool = True
     notes: bool = True
+    line_spacing: Literal["1.5", "2"] = "1.5"
     colophon: bool = True
     download: bool = False
 
@@ -90,6 +92,7 @@ def _to_request(q: RenderQuery) -> Request:
         q.poetry,
         q.line_numbers,
         q.notes,
+        q.line_spacing,
         q.colophon,
     )
 
@@ -115,6 +118,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         getsizeof=lambda p: sum(map(len, p.pages)) or 1,
     )
 
+    async def _run_self_test() -> None:
+        app.state.health = await diagnostics.run(settings)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if not shutil.which(settings.typst_bin):
@@ -124,7 +130,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "No library at %s yet; run `manuscript-discovery ingest`",
                 settings.db_path,
             )
+        app.state.health = None
+        check = asyncio.create_task(_run_self_test())
         yield
+        check.cancel()
+        with contextlib.suppress(
+            asyncio.CancelledError
+        ):  # let a Typst run in progress be killed cleanly
+            await check
         library.close()
 
     app = FastAPI(
@@ -144,6 +157,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def index():
         page = resources.files("manuscript_discovery").joinpath("static/index.html")
         return FileResponse(str(page), media_type="text/html; charset=utf-8")
+
+    @app.get("/api/health")
+    def health():
+        """Typst version and whether CJK text can be drawn in previews (None while still checking)."""
+        return app.state.health or {"status": "checking"}
 
     @app.get("/api/translations")
     def search(

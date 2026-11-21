@@ -32,7 +32,11 @@ python3Packages.buildPythonApplication {
     python3Packages.httpx
     typst
   ];
-  preCheck = "export MANUSCRIPT_FONT_DIR=${fonts}/share/fonts";
+  # The build fails if this font set cannot draw CJK in PNG previews (see diagnostics.py).
+  preCheck = ''
+    export MANUSCRIPT_FONT_DIR=${fonts}/share/fonts
+    export MANUSCRIPT_EXPECT_CJK=1
+  '';
   pythonImportsCheck = [ "manuscript_discovery" ];
 
   meta = {

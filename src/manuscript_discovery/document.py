@@ -39,6 +39,7 @@ class Request:
     poetry: bool = True  # keep poetry lines the source marks
     line_numbers: bool = True  # per-page line numbers (the first text, when parallel)
     notes: bool = True  # wide margins and open line spacing for study notes
+    line_spacing: str = "1.5"  # with notes: "1.5" or "2" (double) lines
     colophon: bool = True  # copyright and licence notice after each text
 
 
@@ -69,7 +70,9 @@ class Document:
         per_page = (
             4400 * area * (11 / r.size) ** 2
         )  # characters per page, plain layout, 11 pt A4
-        per_page *= 0.45 if r.notes else 1  # wide margins and open spacing
+        per_page *= (
+            0.45 * 1.5 / float(r.line_spacing) if r.notes else 1
+        )  # wide margins, open spacing
         per_page *= (
             0.5 if len(self.sections) > 1 else 1
         )  # parallel: each text has half the width
@@ -83,11 +86,14 @@ class Document:
         sections = []
         for s in self.sections:
             kept, size, cut = [], 0, False
+            limit = max_chars * (
+                0.4 if s.typography.cjk else 1
+            )  # full-width characters fill a page sooner
             for b in s.blocks:
-                if size >= max_chars:
+                if size >= limit:
                     cut = True
                     break
-                clipped, was_cut = _clip(b, max_chars - size)
+                clipped, was_cut = _clip(b, int(limit - size))
                 kept.append(clipped)
                 size += _weight(clipped)
                 if was_cut:
@@ -107,6 +113,16 @@ class Document:
             "statement": m.statement_paragraphs,
         }
 
+    @property
+    def leading_em(self) -> float:
+        """Gap between lines in em. Typst measures from the baseline to the next line's cap
+        height (about 0.66 em), so a line pitch of 1.5x or 2x a 1.2 em single line needs these."""
+        return (
+            {"1.5": 1.15, "2": 1.75}[self.request.line_spacing]
+            if self.request.notes
+            else 0.68
+        )
+
     def typst_data(self) -> dict:
         r, parallel = self.request, len(self.sections) > 1
         return {
@@ -114,7 +130,7 @@ class Document:
             "paper": r.paper,
             "size": r.size,
             "notes": r.notes,
-            "line_numbers": r.line_numbers,
+            "leading": self.leading_em,
             "texts": [
                 {
                     "font": list(s.typography.font),
@@ -124,11 +140,15 @@ class Document:
                     "hyphenate": s.typography.hyphenate,
                     "justify": s.typography.justify,
                     "cjk": s.typography.cjk,
+                    # Typst counts every numbered line on a page, whichever column it is in, and draws
+                    # all the numbers in one margin. So only the first text is numbered: its lines
+                    # then number cleanly, whatever the other column's line height.
+                    "numbered": r.line_numbers and i == 0,
                     "heading": s.translation.abbreviation if parallel else None,
                     "blocks": s.blocks,
                     "colophon": self._colophon(s),
                 }
-                for s in self.sections
+                for i, s in enumerate(self.sections)
             ],
         }
 

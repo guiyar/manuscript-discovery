@@ -18,6 +18,12 @@ _TRADITIONAL_REGIONS = {"tw", "hk", "mo"}
 _LATIN_SERIF = (
     "Libertinus Serif"  # Latin, Greek, Cyrillic; other scripts fall back per glyph
 )
+CJK_FONTS = (
+    "Noto Serif CJK SC",
+    "Noto Serif CJK TC",
+    "Noto Serif CJK JP",
+    "Noto Serif CJK KR",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,14 +52,15 @@ def _iso1(iso3: str | None) -> str:
 
 
 def _cjk_font(lang: str, region: str | None, script: str | None) -> str:
+    sc, tc, jp, kr = CJK_FONTS
     if lang == "ja":
-        return "Noto Serif CJK JP"
+        return jp
     if lang == "ko":
-        return "Noto Serif CJK KR"
+        return kr
     traditional = (region in _TRADITIONAL_REGIONS) or "tradition" in (
         script or ""
     ).lower()
-    return "Noto Serif CJK TC" if traditional else "Noto Serif CJK SC"
+    return tc if traditional else sc
 
 
 def typography_for(meta: Metadata) -> Typography:

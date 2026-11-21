@@ -212,3 +212,33 @@ def test_preview_size_estimate_scales_with_the_layout(lib):
     assert (
         build(lib, ("eng-kjv2006", "grctr"), c1=1).preview_chars(6) < base
     )  # narrower columns
+
+
+# --- line spacing and line numbers -------------------------------------------------------------
+
+
+def test_line_spacing_choices_and_notes_switch(lib):
+    lead = lambda **kw: build(lib, c1=1, **kw).typst_data()["leading"]
+    assert lead() == lead(line_spacing="1.5") == 1.15
+    assert lead(line_spacing="2") == 1.75 > lead()
+    assert (
+        lead(notes=False, line_spacing="2") == 0.68
+    )  # the choice belongs to "space for notes"
+
+
+def test_only_the_first_text_is_line_numbered(lib):
+    single = build(lib, c1=1).typst_data()["texts"]
+    pair = build(lib, ("cmn2006", "eng-kjv2006"), c1=1).typst_data()["texts"]
+    assert [t["numbered"] for t in single] == [True] and [
+        t["numbered"] for t in pair
+    ] == [True, False]
+    off = build(lib, ("cmn2006", "eng-kjv2006"), c1=1, line_numbers=False).typst_data()[
+        "texts"
+    ]
+    assert [t["numbered"] for t in off] == [False, False]
+
+
+def test_each_text_is_cut_for_the_preview_by_its_own_density(lib):
+    doc = build(lib, ("eng-kjv2006", "cmn2006"), c1=1, c2=2).truncated(40)
+    en, zh = (s.blocks[0]["text"] for s in doc.sections)
+    assert len(zh) <= 16 < len(en) <= 40  # full-width characters fill a page sooner

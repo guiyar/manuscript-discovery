@@ -46,13 +46,31 @@ run while the app is serving.
   breaks** (off by default) and **poetry lines** (on by default) follow exactly
   what the source marks (USFX `p`/`q` styles); each is a toggle, and a toggle
   only ever merges, so nothing is invented.
-* **Line numbers** restart on each page; with two translations they count the
-  first one.
-* **Space for notes**: wide margins and open line spacing.
+* **Line numbers** restart on each page. With two translations only the first is
+  numbered: Typst counts every numbered line on a page and draws all the numbers
+  in one margin, so numbering both columns scrambled them whenever the columns'
+  lines differ in height (Chinese beside English or Greek).
+* **Space for notes**: wide margins and open line spacing, **1.5 lines or
+  double** (the choice belongs to, and is disabled with, "Space for notes").
 * **Copyright notice** at the end of each text: name, one-line licence notice,
   full statement.
 * Left out as editorial: section headings, footnotes, cross-references, Psalm
   descriptive titles.
+
+## Fonts, and the preview showing empty boxes for CJK
+
+The preview is PNG, and **Typst before 0.15 draws empty boxes in PNG export for
+the variable Noto Serif CJK font that nixpkgs ships, while the same document
+exports to PDF perfectly.** Nothing errors, so it looks like Chinese "does not
+render in the preview". Reproduced with Typst 0.12 and 0.14.2; 0.15 is fine, and
+static fonts work on all of them. The Nix font set therefore pins the *static*
+Noto Serif CJK (`nix/cjk-font.nix`) instead of `noto-fonts-cjk-serif`.
+
+At startup the app renders two different characters per CJK family and compares
+them (missing glyphs come out as identical boxes). It logs an ERROR if any
+family fails, and `GET /api/health` reports the Typst version and the result.
+The Nix build runs the same check against its own font set, so a font closure
+that cannot draw CJK fails `nix flake check` rather than a user's preview.
 
 ## Live preview
 
@@ -123,8 +141,9 @@ Settings are `MANUSCRIPT_*` environment variables (see `settings.py`).
 * Ranges stay within one book. Verse numbering differs between traditions in
   places (Psalms, some Prophets), so a range valid in one translation may be
   refused by another, by design.
-* Fonts: Latin, Greek and Cyrillic use Libertinus Serif; CJK uses Noto Serif CJK
-  (SC/TC/JP/KR chosen from the metadata); other scripts rely on Noto per-glyph
-  fallback, which is untested here.
+* Fonts: Latin, Greek and Cyrillic use Libertinus Serif; CJK uses the static
+  Noto Serif CJK (SC/TC/JP/KR chosen from the metadata; some zips mislabel the
+  script, e.g. a Chinese text with `Latin`, so the language code decides); other
+  scripts rely on Noto per-glyph fallback, which is untested here.
 * The Nix files (flake, package, module, image) have not been evaluated; the
   Python and Typst pipeline has, against a real eBible zip.

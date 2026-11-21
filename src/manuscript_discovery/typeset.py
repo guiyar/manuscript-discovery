@@ -62,11 +62,16 @@ async def _compile(
     output: str,
     collect: Callable[[Path], T],
     abort: Callable[[], Awaitable[bool]] | None,
+    source: str | None = None,
 ) -> T:
     template = (
-        resources.files("manuscript_discovery")
-        .joinpath("template/book.typ")
-        .read_text("utf-8")
+        source
+        if source is not None
+        else (
+            resources.files("manuscript_discovery")
+            .joinpath("template/book.typ")
+            .read_text("utf-8")
+        )
     )
     async with gate:
         if (
