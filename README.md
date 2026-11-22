@@ -143,6 +143,11 @@ them; `npm test` inside `tests/ui` runs them against any running server
 that would need the npm dependency hash, which I could not compute without Nix;
 it does run the asset-build tests.
 
+The UI tests are verified on Node 22 and 24. jsdom has its own `AbortSignal`,
+which Node 24's `fetch` refuses outright, so `tests/ui/helpers.mjs` bridges the
+two (a real browser has only one) and `tests/ui/harness.test.mjs` guards that
+bridge.
+
 
 ## Fonts, and the preview showing empty boxes for CJK
 

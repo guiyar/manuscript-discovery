@@ -103,7 +103,12 @@ def test_the_ui_in_a_browser_like_environment(
             text=True,
             timeout=600,
             env={**os.environ, "UI_BASE_URL": base, "UI_BASE_URL_NO_KJV": base_without},
+            check=False,
         )
+    node = subprocess.run(
+        ["node", "--version"], capture_output=True, text=True, check=False
+    ).stdout.strip()
     assert run.returncode == 0, (
-        f"UI tests failed against {static_dir}:\n{run.stdout[-7000:]}\n{run.stderr[-2000:]}"
+        f"UI tests failed (node {node}) against {static_dir}:\n"
+        f"{run.stdout[-7000:]}\n{run.stderr[-2000:]}"
     )

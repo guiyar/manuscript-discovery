@@ -25,6 +25,21 @@ export const previewImages = (w) => [...$(w, "pages").querySelectorAll("img")];
 export const fire = (w, el, type = "input") => el.dispatchEvent(new w.Event(type, { bubbles: true }));
 export const spacingRadios = (w) => [...w.document.querySelectorAll("input[name=line_spacing]")];
 
+/**
+ * The page and Node's fetch live in different worlds: jsdom has its own AbortController, and
+ * Node 24's fetch refuses its signal ("Expected signal to be an instance of AbortSignal").
+ * A real browser has a single AbortSignal, so only this harness needs the bridge: abort a Node
+ * controller when the page's signal aborts. Without it every live-preview request, which is
+ * cancellable, throws before it is sent.
+ */
+function nodeSignal(signal) {
+  if (!signal) return undefined;
+  const controller = new AbortController();
+  if (signal.aborted) controller.abort();
+  else signal.addEventListener("abort", () => controller.abort(), { once: true });
+  return controller.signal;
+}
+
 /** Open the page. `window.__previews` counts /api/preview requests; `__lastPreview` is the latest URL. */
 export async function open(query = "", base = BASE) {
   const dom = await JSDOM.fromURL(new URL(query, base).href, {
@@ -33,10 +48,10 @@ export async function open(query = "", base = BASE) {
     beforeParse(w) {
       w.__previews = 0;
       w.__lastPreview = "";
-      w.fetch = (u, o) => {
+      w.fetch = (u, o = {}) => {
         const url = String(u);
         if (url.startsWith("/api/preview?")) { w.__previews++; w.__lastPreview = url; }
-        return fetch(new URL(url, w.location.href), o);
+        return fetch(new URL(url, w.location.href), { ...o, signal: nodeSignal(o.signal) });
       };
     },
   });
