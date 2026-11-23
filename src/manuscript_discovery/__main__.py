@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from . import assets
 from .app import create_app
 from .ingest import ingest_paths
+from .listen import bind_unix_socket
 from .settings import Settings
 
 
@@ -63,18 +64,27 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"{added} added or updated, {unchanged} unchanged, {len(failed)} failed")
         return 1 if failed else 0
-    uvicorn.run(
-        create_app(settings),
-        host=settings.host,
-        port=settings.port,
-        log_level=settings.log_level,
+    app = create_app(settings)
+    options = {
+        "log_level": settings.log_level,
         # Behind a reverse proxy: take the client address from X-Forwarded-For, but only from the proxies
         # named here, so a client reaching the port directly cannot forge it.
-        proxy_headers=True,
-        forwarded_allow_ips=settings.trusted_proxies,
-        server_header=False,  # do not advertise the server software
-        timeout_graceful_shutdown=15,  # let requests in flight finish on SIGTERM, then stop
-    )
+        "proxy_headers": True,
+        "forwarded_allow_ips": settings.forwarded_allow_ips,
+        "server_header": False,  # do not advertise the server software
+        "timeout_graceful_shutdown": 15,  # let requests in flight finish on SIGTERM, then stop
+    }
+    if settings.unix_socket:
+        try:
+            sock = bind_unix_socket(settings.unix_socket)
+        except OSError as e:
+            print(
+                f"error: cannot listen on {settings.unix_socket}: {e}", file=sys.stderr
+            )
+            return 1
+        uvicorn.Server(uvicorn.Config(app, **options)).run(sockets=[sock])
+    else:
+        uvicorn.run(app, host=settings.host, port=settings.port, **options)
     return 0
 
 

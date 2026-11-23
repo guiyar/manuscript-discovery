@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,5 +35,29 @@ class Settings(BaseSettings):
     preview_cache_mb: float = Field(64, gt=0)  # rendered previews kept in memory
     host: str = "127.0.0.1"
     port: int = Field(8000, ge=1, le=65535)
-    trusted_proxies: str = "127.0.0.1"  # who may set X-Forwarded-For/-Proto; "*" only if nothing else can reach the port
+    unix_socket: Path | None = (
+        None  # listen here instead of host:port; created with mode 0660 (see listen.py)
+    )
+    trusted_proxies: str | None = (
+        None  # who may set X-Forwarded-For/-Proto; see forwarded_allow_ips
+    )
     log_level: Literal["debug", "info", "warning", "error"] = "info"
+
+    @field_validator("unix_socket")
+    @classmethod
+    def _socket_path_is_absolute(cls, path: Path | None) -> Path | None:
+        if path is not None and not path.is_absolute():
+            raise ValueError("must be an absolute path")
+        return path
+
+    @property
+    def forwarded_allow_ips(self) -> str:
+        """Whose X-Forwarded-* headers to believe.
+
+        Over TCP only a named proxy (default: this machine). On a Unix socket a peer has no address
+        to compare, and the socket's file permissions already decide who may connect, so the
+        headers are trusted by default; set MANUSCRIPT_TRUSTED_PROXIES to override either way.
+        """
+        if self.trusted_proxies is not None:
+            return self.trusted_proxies
+        return "*" if self.unix_socket else "127.0.0.1"
