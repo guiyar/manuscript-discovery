@@ -101,6 +101,74 @@ expects:
     strings, which hold the passage and any custom title.
 
 
+## Serving with nginx (NixOS)
+
+`services.manuscript-discovery.nginx.enable` puts a hardened nginx in front of
+the app:
+
+```nix
+services.manuscript-discovery = {
+  enable = true;
+  sourceDir = "/srv/ebible";
+  openFirewall = true;
+  nginx = {
+    enable = true;
+    domain = "manuscripts.example.org";
+  };
+};
+security.acme.acceptTerms = true;
+security.acme.defaults.email = "ops@example.org";
+```
+
+The app then listens on a Unix socket instead of a TCP port, which is what
+makes the rest tighter:
+
+- **No port to reach.** The socket is `/run/manuscript-discovery/app.sock`, mode
+    0660 in a 0750 directory, both owned by the service's user and group. nginx
+    reaches it through `SupplementaryGroups` on its own unit; no other local
+    user can connect.
+- **No network for the app.** The unit runs with `PrivateNetwork=true` and only
+    `AF_UNIX`, so the app, and every Typst process it starts, sit in an empty
+    network namespace.
+- **The app binds the socket itself.** uvicorn's own `uds` option sets the socket
+    to 0666, so `listen.py` creates it with exactly 0660, replaces a stale file
+    from a crash, and refuses to touch a live listener or anything that is not
+    a socket.
+- **Forwarded headers are trusted by default on a socket.** Peers on a Unix
+    socket have no address for uvicorn's list of IPs to match, and file
+    permissions already decide who may connect. `MANUSCRIPT_TRUSTED_PROXIES`
+    still overrides this either way.
+
+What nginx does:
+
+- Terminates TLS (ACME by default; set `nginx.acme = false` to supply your own
+    certificate), redirects HTTP, and sends HSTS for a year.
+- Sets `X-Forwarded-For` to the peer address rather than appending to what the
+    client sent.
+- Limits each client per route: `rateLimit.preview` (live preview),
+    `rateLimit.pdf` (PDF downloads, the dearest request; `?format=txt` does not
+    count) and `rateLimit.other`, all as `Nr/s` or `Nr/m`.
+- Allows only `GET` and `HEAD`, keeps request bodies and header timeouts small,
+    and never retries a render on another attempt.
+- Waits `nginx.readTimeout` (default 45 s) for the app, which must stay above
+    `MANUSCRIPT_TIMEOUT_S`.
+- Answers `404` for `/healthz`, `/readyz` and `/api/health` from outside. Probe
+    them on the host through the socket, e.g.
+    `curl --unix-socket /run/manuscript-discovery/app.sock http://localhost/readyz`.
+
+The app's own security headers (including the hash-based CSP) pass through
+untouched.
+
+Things to know:
+
+- The service now runs as a static `manuscript-discovery` user rather than
+    `DynamicUser`, so nginx can share its group.
+- `openFirewall` opens 80 and 443 with nginx, or the app's port without.
+- The nginx settings it enables are `mkDefault`s, so the host can override them.
+- Rate limits are per client address as nginx sees it. Behind a CDN or another
+    proxy, nginx needs the real-IP module configured, which this does not do.
+
+
 ## Web assets
 
 `src/manuscript_discovery/static/index.html` is the readable source (one file:
@@ -242,5 +310,8 @@ Settings are `MANUSCRIPT_*` environment variables (see `settings.py`).
     Noto Serif CJK (SC/TC/JP/KR chosen from the metadata; some zips mislabel the
     script, e.g. a Chinese text with `Latin`, so the language code decides);
     other scripts rely on Noto per-glyph fallback, which is untested here.
-- The Nix files (flake, package, module, image) have not been evaluated; the
+- The Nix files evaluate against the pinned nixpkgs
+    (`nix flake check --no-build`, and a NixOS configuration using the module),
+    but nothing has been built or started: the package build, the Docker image,
+    the systemd unit and the nginx configuration have never been run. The
     Python and Typst pipeline has, against a real eBible zip.
