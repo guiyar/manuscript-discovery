@@ -130,7 +130,10 @@ def test_favicon_requests_are_cheap_and_quiet(db_path):
 # --- liveness, readiness, version ---------------------------------------------------------------
 
 
-def test_healthz_is_always_up_and_readyz_says_when_it_can_serve(db_path):
+def test_healthz_is_always_up_and_readyz_says_when_it_can_serve(db_path, monkeypatch):
+    monkeypatch.setattr(
+        shutil, "which", lambda name: "/test/typst" if name == "typst" else None
+    )
     with client(db_path) as c:
         assert c.get("/healthz").json() == {"status": "ok"}
         ready = c.get("/readyz")
@@ -143,7 +146,12 @@ def test_healthz_is_always_up_and_readyz_says_when_it_can_serve(db_path):
         )
 
 
-def test_not_ready_without_a_library_an_empty_one_or_typst(db_path, tmp_path):
+def test_not_ready_without_a_library_an_empty_one_or_typst(
+    db_path, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        shutil, "which", lambda name: "/test/typst" if name == "typst" else None
+    )
     with client(tmp_path / "none.sqlite") as c:
         r = c.get("/readyz")
         assert r.status_code == 503 and "ingest" in r.json()["problems"][0]
@@ -475,3 +483,16 @@ def test_abandoned_preview_is_cancelled_and_can_be_retried(db_path, monkeypatch)
             assert calls == 2
 
     asyncio.run(scenario())
+
+
+def test_library_failure_does_not_expose_paths(tmp_path, caplog):
+    db = tmp_path / "private-library.sqlite"
+    with client(db, typst_bin="/private/bin/typst") as c:
+        response = c.get("/api/translations")
+        assert response.status_code == 503
+        assert response.json() == {"detail": "Library unavailable"}
+        readiness = c.get("/readyz")
+        assert readiness.status_code == 503
+        assert str(db) not in readiness.text
+        assert "/private/bin/typst" not in readiness.text
+    assert str(db) in caplog.text
