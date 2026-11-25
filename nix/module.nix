@@ -28,6 +28,8 @@ let
     proxy_next_upstream off;
     limit_except GET HEAD { deny all; }
   '';
+
+  rootDir = "/var/lib/manuscript-discovery-root";
 in
 {
   options.services.manuscript-discovery = {
@@ -164,11 +166,24 @@ in
             StateDirectory = "manuscript-discovery";
             UMask = "0077";
             # Typst runs as a child process on user-influenced input: keep the whole unit boxed in.
+            RootDirectory = rootDir;
+            MountAPIVFS = true;
+            BindReadOnlyPaths = [
+              "/nix/store"
+            ]
+            ++ lib.optional (cfg.sourceDir != null) (toString cfg.sourceDir);
+            BindPaths = lib.optional (builtins.dirOf cfg.dbPath != "/var/lib/manuscript-discovery") (
+              builtins.dirOf cfg.dbPath
+            );
+            ProtectProc = "invisible";
+            ProcSubset = "pid";
+            StateDirectoryMode = "0700";
+            WorkingDirectory = "/";
             ProtectSystem = "strict";
             ReadWritePaths = [ (builtins.dirOf cfg.dbPath) ];
             ReadOnlyPaths = lib.optional (cfg.sourceDir != null) (toString cfg.sourceDir);
             ProtectHome = true;
-            PrivateTmp = true;
+            PrivateTmp = "disconnected";
             PrivateDevices = true;
             NoNewPrivileges = true;
             CapabilityBoundingSet = "";
@@ -183,6 +198,8 @@ in
             RestrictSUIDSGID = true;
             RestrictNamespaces = true;
             SystemCallArchitectures = "native";
+            RemoveIPC = true;
+            MemoryDenyWriteExecute = true;
             RestrictAddressFamilies =
               if nginx.enable then
                 [ "AF_UNIX" ]
@@ -196,12 +213,23 @@ in
               "@system-service"
               "~@privileged"
             ];
-            MemoryMax = "2G"; # ingest parses several large XML files in parallel
+            CPUQuota = "200%";
+            CPUWeight = 50;
+            MemoryHigh = "1536M";
+            MemoryMax = "2G";
+            MemorySwapMax = "0";
+            TasksMax = 128;
+            IOWeight = 50;
+            LimitNOFILE = 4096;
+            LimitCORE = 0;
+            LogRateLimitIntervalSec = "30s";
+            LogRateLimitBurst = 200;
           }
           // lib.optionalAttrs nginx.enable {
             # Behind nginx the app needs no network at all: it, and every Typst it starts, run in an
             # empty network namespace and talk only through the socket.
             PrivateNetwork = true;
+            IPAddressDeny = "any";
             RuntimeDirectory = "manuscript-discovery";
             RuntimeDirectoryMode = "0750";
           };
@@ -216,6 +244,10 @@ in
           else
             [ cfg.port ]
         );
+
+        systemd.tmpfiles.rules = [
+          "d ${rootDir} 0755 root root -"
+        ];
       }
 
       # With no domain the assertion above explains; do not also trip over a null host name here.
@@ -242,6 +274,11 @@ in
             }
             limit_req_zone $md_pdf_key zone=md_pdf:10m rate=${nginx.rateLimit.pdf};
             limit_req_status 429;
+            # Global limits
+            limit_req_zone $server_name zone=md_global:1m rate=60r/s;
+            limit_req_zone $server_name zone=md_preview_global:1m rate=10r/s;
+            limit_req_zone $server_name zone=md_pdf_global:1m rate=30r/m;
+            limit_conn_zone $server_name zone=md_connections:1m;
           '';
 
           upstreams.manuscript-discovery = {
@@ -259,6 +296,8 @@ in
               client_body_timeout 10s;
               send_timeout 30s;
               keepalive_timeout 30s;
+              limit_conn md_connections 32;
+              limit_conn_status 429;
             '';
             locations = {
               "/" = {
@@ -267,6 +306,7 @@ in
                 extraConfig = ''
                   ${proxy}
                   limit_req zone=md_other burst=60 nodelay;
+                  limit_req zone=md_global burst=100 nodelay;
                 '';
               };
               "= /api/preview" = {
@@ -275,6 +315,7 @@ in
                 extraConfig = ''
                   ${proxy}
                   limit_req zone=md_preview burst=20 nodelay;
+                  limit_req zone=md_preview_global burst=10 nodelay;
                 '';
               };
               "= /api/render" = {
@@ -284,6 +325,7 @@ in
                   ${proxy}
                   limit_req zone=md_pdf burst=5 nodelay;
                   limit_req zone=md_other burst=60 nodelay;
+                  limit_req zone=md_pdf_global burst=10 nodelay;
                 '';
               };
               # Probes and diagnostics are for whoever runs the host, over the socket; not for the world.
