@@ -18,26 +18,11 @@
       packages = forAllSystems (
         pkgs:
         let
-          # Fonts are part of the environment, so output never depends on what the host has
-          # installed. Libertinus Serif covers Latin, Greek and Cyrillic; the STATIC Noto Serif CJK
-          # covers Chinese/Japanese/Korean (not nixpkgs' variable build: see nix/cjk-font.nix);
-          # Noto supplies per-glyph fallback for other scripts.
-          fonts = pkgs.symlinkJoin {
-            name = "manuscript-discovery-fonts";
-            paths = [
-              pkgs.libertinus
-              pkgs.noto-fonts
-              (pkgs.callPackage ./nix/cjk-font.nix { })
-            ];
-          };
-          app = pkgs.callPackage ./nix/package.nix { inherit fonts; };
+          packages = import ./nix { inherit pkgs; };
+          app = packages.default;
         in
-        {
-          default = app;
-          inherit fonts;
-        }
+        packages
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          # nix build .#docker && docker load < result
           docker = pkgs.dockerTools.buildLayeredImage {
             name = "manuscript-discovery";
             tag = "latest";
@@ -45,7 +30,7 @@
             extraCommands = "mkdir -p tmp && chmod 1777 tmp";
             config = {
               Entrypoint = [ "${app}/bin/manuscript-discovery" ];
-              Cmd = [ "serve" ]; # or: ingest /sources
+              Cmd = [ "serve" ];
               User = "65534:65534";
               ExposedPorts."8000/tcp" = { };
               Volumes."/data" = { };
@@ -109,7 +94,7 @@
         }
       );
 
-      nixosModules.default = import ./nix/module.nix self;
+      nixosModules.default = import ./nix/module.nix;
 
       # `nix flake check` builds the package, which runs the test suite.
       checks = forAllSystems (pkgs: {

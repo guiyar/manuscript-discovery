@@ -1,4 +1,3 @@
-self:
 {
   config,
   lib,
@@ -35,7 +34,7 @@ in
     enable = lib.mkEnableOption "the Manuscript Discovery web service";
     package = lib.mkOption {
       type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+      default = (import ./default.nix { inherit pkgs; }).default;
       description = "The manuscript-discovery package to run.";
     };
     dbPath = lib.mkOption {
