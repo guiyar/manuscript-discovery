@@ -33,8 +33,7 @@ let
 
   rootDir = "/var/lib/manuscript-discovery-root";
   ingestRoot = "${rootDir}-ingest";
-  stateDir = "/var/lib/manuscript-discovery";
-  dbDir = builtins.dirOf cfg.dbPath;
+  dbPath = "${cfg.dataDir}/library.sqlite";
   ingestUnit = "manuscript-discovery-ingest.service";
   hasSources = cfg.sourceDir != null;
   ingestUser = "manuscript-discovery-ingest";
@@ -45,7 +44,7 @@ let
   appEnvironment =
     lib.mapAttrs' (name: value: lib.nameValuePair "MANUSCRIPT_${lib.toUpper name}" value) cfg.settings
     // {
-      MANUSCRIPT_DB_PATH = cfg.dbPath;
+      MANUSCRIPT_DB_PATH = dbPath;
     };
 
   sandbox = {
@@ -100,10 +99,13 @@ in
       default = (import ./default.nix { inherit pkgs; }).default;
       description = "The manuscript-discovery package to run.";
     };
-    dbPath = lib.mkOption {
+    dataDir = lib.mkOption {
       type = lib.types.str;
-      default = "/var/lib/manuscript-discovery/library.sqlite";
-      description = "Absolute library database path, in a dedicated directory. Built by ingest; mounted read-only by the web app.";
+      default = "/var/lib/manuscript-discovery";
+      description = ''
+        Absolute path to a dedicated data directory containing library.sqlite.
+        Managed by tmpfiles; writable by ingestion and mounted read-only by the web app.
+      '';
     };
     sourceDir = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
@@ -188,8 +190,12 @@ in
       {
         assertions = [
           {
-            assertion = lib.hasPrefix "/" cfg.dbPath && dbDir != "/";
-            message = "services.manuscript-discovery.dbPath must be absolute and in a dedicated directory.";
+            assertion =
+              lib.hasPrefix "/" cfg.dataDir
+              && lib.all (part: part != "" && part != "." && part != "..") (
+                lib.splitString "/" (lib.removePrefix "/" cfg.dataDir)
+              );
+            message = "services.manuscript-discovery.dataDir must be an absolute, normalised path to a dedicated directory (not /).";
           }
           {
             assertion = !nginx.enable || nginx.domain != null;
@@ -224,7 +230,7 @@ in
           ]
           ++ lib.optional hasSources ingestUnit
           ++ lib.optional (!nginx.enable) "network.target";
-          unitConfig.RequiresMountsFor = dbDir;
+          unitConfig.RequiresMountsFor = cfg.dataDir;
           environment =
             appEnvironment
             // (
@@ -246,7 +252,7 @@ in
               RootDirectory = rootDir;
               BindReadOnlyPaths = [
                 "/nix/store"
-                dbDir
+                cfg.dataDir
               ];
               SupplementaryGroups = [ dbGroup ];
               # No StateDirectory, BindPaths or ReadWritePaths: SQLite cannot be
@@ -274,7 +280,7 @@ in
           after = [ "systemd-tmpfiles-setup.service" ];
           unitConfig = {
             RequiresMountsFor = [
-              dbDir
+              cfg.dataDir
               (toString cfg.sourceDir)
             ];
             # Start through the web unit, not independently during serving.
@@ -296,14 +302,12 @@ in
             ];
             TimeoutStartSec = "1h";
             RootDirectory = ingestRoot;
-            StateDirectory = "manuscript-discovery";
-            StateDirectoryMode = "0750";
             BindReadOnlyPaths = [
               "/nix/store"
               (toString cfg.sourceDir)
             ];
-            BindPaths = lib.optional (dbDir != stateDir) dbDir;
-            ReadWritePaths = [ dbDir ];
+            BindPaths = [ cfg.dataDir ];
+            ReadWritePaths = [ cfg.dataDir ];
             PrivateNetwork = true;
             IPAddressDeny = "any";
             RestrictAddressFamilies = [ "AF_UNIX" ];
@@ -322,7 +326,7 @@ in
 
         systemd.tmpfiles.rules = [
           "d ${rootDir} 0755 root root -"
-          "d ${stateDir} 0750 ${if hasSources then ingestUser else user} ${dbGroup} -"
+          "d ${cfg.dataDir} 0750 ${if hasSources then ingestUser else user} ${dbGroup} -"
         ]
         ++ lib.optionals hasSources [
           "d ${ingestRoot} 0755 root root -"
