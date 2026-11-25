@@ -249,3 +249,28 @@ def test_diagnostic_streams_are_drained_but_bounded():
         assert out == b"x" * 65536 and err == b"y" * 65536
 
     run(scenario())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_timeout_kills_descendants_that_hold_compiler_pipes(tmp_path):
+    import sys
+
+    marker = tmp_path / "child-finished"
+    script = tmp_path / "typst"
+    child = f"import time; time.sleep(2); open({str(marker)!r}, 'w').close()"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import subprocess, sys\n"
+        f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+    )
+    script.chmod(0o700)
+    started = time.monotonic()
+    with pytest.raises(TypesetError, match="timed out"):
+        run(
+            render_png(
+                {}, Settings(typst_bin=str(script), timeout_s=0.3), asyncio.Semaphore(1)
+            )
+        )
+    assert time.monotonic() - started < 1.5
+    time.sleep(2)
+    assert not marker.exists()

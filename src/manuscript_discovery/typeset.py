@@ -8,6 +8,7 @@ import contextlib
 import json
 import logging
 import os
+import signal
 import tempfile
 import time
 from importlib import resources
@@ -98,10 +99,42 @@ async def _communicate_bounded(proc: asyncio.subprocess.Process) -> tuple[bytes,
     return out, err
 
 
+def _kill(proc: asyncio.subprocess.Process, process_group: bool) -> None:
+    with contextlib.suppress(ProcessLookupError):
+        if process_group and os.name == "posix":
+            # The leader may have exited while a child still holds its pipes.
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            proc.kill()
+
+
+async def spawn_typst(*cmd: str, **kwargs) -> asyncio.subprocess.Process:
+    """Start Typst in its own process group and retain the handle on cancellation."""
+    starting = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            *cmd, start_new_session=os.name == "posix", **kwargs
+        )
+    )
+    try:
+        return await asyncio.shield(starting)
+    except asyncio.CancelledError:
+        # Cancellation can arrive before create_subprocess_exec returns a handle.
+        try:
+            proc = await starting
+        except OSError:
+            pass
+        else:
+            _kill(proc, process_group=True)
+            await _communicate_bounded(proc)
+        raise
+
+
 async def finish(
     proc: asyncio.subprocess.Process,
     timeout_s: float,
     abort: Callable[[], Awaitable[bool]] | None = None,
+    *,
+    process_group: bool = False,
 ) -> tuple[bytes, bytes]:
     """Wait for a Typst process and return (stdout, stderr). If the client leaves mid-render, the
     time runs out, or this task is cancelled, kill the process: an abandoned render must not keep a
@@ -119,8 +152,7 @@ async def finish(
             if abort is not None and await abort():
                 raise Aborted()
     except BaseException:
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
+        _kill(proc, process_group)
         # Drain the killed process's pipes rather than leaving a paused pipe
         # behind; waiting on a process with a full pipe can deadlock.
         await pending
@@ -173,7 +205,7 @@ async def _compile(
             cmd += [str(work / "book.typ"), str(work / output)]
             env = {"PATH": os.environ.get("PATH", ""), "HOME": td, "TMPDIR": td}
             try:
-                proc = await asyncio.create_subprocess_exec(
+                proc = await spawn_typst(
                     *cmd,
                     cwd=td,
                     env=env,
@@ -184,9 +216,9 @@ async def _compile(
                 raise TypesetError(
                     f"Typst executable not found: {settings.typst_bin}"
                 ) from e
-            text = (await finish(proc, settings.timeout_s, abort))[1].decode(
-                "utf-8", "replace"
-            )
+            text = (await finish(proc, settings.timeout_s, abort, process_group=True))[
+                1
+            ].decode("utf-8", "replace")
             if proc.returncode != 0:
                 log.error("typst failed (%s): %s", proc.returncode, text[:2000])
                 raise TypesetError("Typesetting failed")
