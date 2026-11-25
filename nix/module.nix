@@ -292,9 +292,6 @@ in
           "d ${stateDir} 0750 ${if hasSources then ingestUser else user} ${dbGroup} -"
         ] ++ lib.optionals hasSources [
           "d ${ingestRoot} 0755 root root -"
-          # Upgrade the default database from the old 0600 web-owned layout.
-          # z adjusts an existing file, but does not create an empty database.
-          "z ${stateDir}/library.sqlite 0640 ${ingestUser} ${dbGroup} -"
         ];
       }
 
