@@ -80,7 +80,10 @@ expects:
 - **Load shedding.** At most `MAX_CONCURRENT` (default: one per core)
     preview and render requests run at once, including document construction and
     plain-text output. At most `MAX_WAITING` (16) queue before loading chapters;
-    the rest get `503` with `Retry-After: 5`, which the UI shows as “busy”.
+    the rest get `503` with `Retry-After: 5`, which the UI shows as “busy”. The
+    outer Uvicorn limit, `LIMIT_CONCURRENCY` (64), also bounds connections and
+    request tasks, including cheap endpoints. Keep it above the total render
+    admission limit, allowing room for other requests and proxy connections.
     One Typst render is killed after `TIMEOUT_S` (30), or if its client leaves.
     The proxy read timeout also needs to allow for queueing and document
     construction. Cached preview lookups share the request limit, but fetching

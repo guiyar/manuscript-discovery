@@ -496,3 +496,15 @@ def test_library_failure_does_not_expose_paths(tmp_path, caplog):
         assert str(db) not in readiness.text
         assert "/private/bin/typst" not in readiness.text
     assert str(db) in caplog.text
+
+
+def test_serve_passes_concurrency_limit(monkeypatch):
+    seen = {}
+    monkeypatch.setenv("MANUSCRIPT_LIMIT_CONCURRENCY", "48")
+    monkeypatch.delenv("MANUSCRIPT_UNIX_SOCKET", raising=False)
+    monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **kw: seen.update(kw))
+    assert cli.main(["serve"]) == 0
+    assert seen["limit_concurrency"] == 48
+    assert Settings().limit_concurrency == 48
+    with pytest.raises(ValueError):
+        Settings(limit_concurrency=1)

@@ -67,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     app = create_app(settings)
     options = {
         "log_level": settings.log_level,
+        "limit_concurrency": settings.limit_concurrency,
         # Behind a reverse proxy: take the client address from X-Forwarded-For, but only from the proxies
         # named here, so a client reaching the port directly cannot forge it.
         "proxy_headers": True,
