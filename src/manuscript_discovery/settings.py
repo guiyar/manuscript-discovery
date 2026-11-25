@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     preview_ppi: int = Field(
         96, ge=48, le=200
     )  # screen resolution; the PDF is the print-quality output
+    max_pdf_mb: int = Field(32, ge=1, le=1024)  # maximum PDF response size
+    max_preview_mb: int = Field(32, ge=1, le=1024)  # combined PNG output size
     preview_cache_mb: float = Field(64, gt=0)  # rendered previews kept in memory
     host: str = "127.0.0.1"
     port: int = Field(8000, ge=1, le=65535)

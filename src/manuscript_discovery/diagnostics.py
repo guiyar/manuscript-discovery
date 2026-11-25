@@ -12,7 +12,7 @@ import asyncio
 import logging
 
 from .settings import Settings
-from .typeset import TypesetError, _compile, finish
+from .typeset import TypesetError, _compile, finish, read_pages
 from .typography import CJK_FONTS
 
 log = logging.getLogger(__name__)
@@ -58,13 +58,15 @@ async def run(
             gate if gate is not None else asyncio.Semaphore(1),
             ["--format", "png", "--ppi", "48"],
             "out-{0p}.png",
-            lambda w: [f.read_bytes() for f in sorted(w.glob("out-*.png"))],
+            lambda w: read_pages(w, settings.max_preview_mb * 1024 * 1024, len(CJK_FONTS) * len(_SAMPLES)),
             None,
             source=_source(),
         )
     except TypesetError:
         return {"typst": version, "cjk_png": {}, "ok": False}
     width = len(_SAMPLES)
+    if len(pages) != len(CJK_FONTS) * width:
+        return {"typst": version, "cjk_png": {}, "ok": False}
     cjk = {
         family: pages[i * width] != pages[i * width + 1]
         for i, family in enumerate(CJK_FONTS)

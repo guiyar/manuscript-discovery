@@ -84,7 +84,12 @@ expects:
     One Typst render is killed after `TIMEOUT_S` (30), or if its client leaves.
     The proxy read timeout also needs to allow for queueing and document
     construction. Cached preview lookups share the request limit, but fetching
-    an already-rendered PNG does not.
+    an already-rendered PNG does not. PDF responses and the combined PNG
+    output (including the lookahead page) are each capped at 32 MiB by
+    `MAX_PDF_MB` and `MAX_PREVIEW_MB`. Compiler diagnostics retain at most
+    64 KiB per stream. On NixOS the web unit also limits individual files
+    to 64 MiB (`LimitFSIZE`); adjust that limit if raising the application caps.
+    Ingestion has no such file-size cap.
 - **Client address.** Set `MANUSCRIPT_TRUSTED_PROXIES` to the proxy's address
     (default `127.0.0.1`) so `X-Forwarded-For` is honoured from it and from
     nobody else; use `*` only when nothing else can reach the port. Without

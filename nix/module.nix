@@ -228,6 +228,8 @@ in
           );
           serviceConfig = sandbox // {
             ExecStart = "${exe} serve";
+            # Ingestion writes a potentially large database; only serving has this cap.
+            LimitFSIZE = "64M";
             Restart = "on-failure";
             RootDirectory = rootDir;
             BindReadOnlyPaths = [ "/nix/store" dbDir ];
