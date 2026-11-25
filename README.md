@@ -252,7 +252,9 @@ print-quality output). To keep that cheap:
 - the browser waits 450 ms after the last change and cancels any request still
     in flight;
 - previews are cached by a hash of exactly what was rendered, so returning to
-    earlier settings is free;
+    earlier settings avoids another render. Concurrent misses for an identical
+    preview share one compiler task; it is cancelled only when the last waiter
+    leaves. Each waiter still occupies a document admission slot;
 - layout is cut off after about six pages' worth of text, so cost does not grow
     with the selection;
 - the server starts no render for a client that has already left, and kills one

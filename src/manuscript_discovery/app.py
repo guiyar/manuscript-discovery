@@ -8,6 +8,7 @@ import logging
 import shutil
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal, NamedTuple
 
@@ -44,6 +45,12 @@ class Static(StaticFiles):
 class Preview(NamedTuple):
     pages: list[bytes]
     complete: bool  # False when the document continues beyond the pages shown
+
+
+@dataclass
+class InFlightPreview:
+    task: asyncio.Task[Preview]
+    waiters: int = 0
 
 
 class RenderQuery(BaseModel):
@@ -111,6 +118,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         maxsize=int(settings.preview_cache_mb * 1024 * 1024),
         getsizeof=lambda p: sum(map(len, p.pages)) or 1,
     )
+
+    in_flight: dict[str, InFlightPreview] = {}
+
+    async def compile_preview(key: str, data: dict, complete: bool) -> Preview:
+        started = time.perf_counter()
+        pages = await render_png(data, settings, gate)
+        hit = Preview(
+            pages[: settings.preview_pages],
+            complete and len(pages) <= settings.preview_pages,
+        )
+        with contextlib.suppress(ValueError):  # larger than the whole cache
+            previews[key] = hit
+        log.info(
+            "preview %s rendered: %d pages, %.0f ms",
+            key[:8],
+            len(hit.pages),
+            (time.perf_counter() - started) * 1000,
+        )
+        return hit
+
+    async def shared_preview(
+        key: str, data: dict, complete: bool, http: HttpRequest
+    ) -> Preview:
+        # All map operations happen on the event loop without an await between
+        # lookup and registration. The enclosing document gate bounds waiters.
+        entry = in_flight.get(key)
+        if entry is None:
+            entry = InFlightPreview(asyncio.create_task(compile_preview(key, data, complete)))
+            in_flight[key] = entry
+        entry.waiters += 1
+        try:
+            while True:
+                # asyncio.wait never cancels the shared task when this waiter
+                # disconnects or is cancelled.
+                done, _ = await asyncio.wait({entry.task}, timeout=0.1)
+                if done:
+                    return entry.task.result()
+                if await http.is_disconnected():
+                    raise Aborted()
+        finally:
+            entry.waiters -= 1
+            if entry.waiters == 0:
+                del in_flight[key]
+                if not entry.task.done():
+                    entry.task.cancel()
+                # Keep our admission slot until the abandoned compiler has
+                # cleaned up. Also retrieve any exception from an abandoned task.
+                await asyncio.gather(entry.task, return_exceptions=True)
 
     async def _run_self_test() -> None:
         app.state.health = await diagnostics.run(settings, gate=gate)
@@ -242,37 +297,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             data = doc.typst_data()
             key = hashlib.sha256(
                 json.dumps(
-                    [data, settings.preview_ppi, settings.preview_pages],
+                    [data, doc.complete, settings.preview_ppi, settings.preview_pages],
                     sort_keys=True,
                     ensure_ascii=False,
                 ).encode()
             ).hexdigest()[:32]
             hit = previews.get(key)
             if hit is None:
-                started = time.perf_counter()
                 try:
-                    pages = await render_png(
-                        data, settings, gate, abort=http.is_disconnected
-                    )
+                    hit = await shared_preview(key, data, doc.complete, http)
                 except Aborted:
                     log.info("preview %s abandoned: client gone", key[:8])
                     return Response(status_code=499)
                 except TypesetError as e:
                     raise HTTPException(500, str(e)) from None
-                hit = Preview(
-                    pages[: settings.preview_pages],
-                    doc.complete and len(pages) <= settings.preview_pages,
-                )
-                with contextlib.suppress(
-                    ValueError
-                ):  # larger than the whole cache: just don't keep it
-                    previews[key] = hit
-                log.info(
-                    "preview %s rendered: %d pages, %.0f ms",
-                    key[:8],
-                    len(hit.pages),
-                    (time.perf_counter() - started) * 1000,
-                )
             return {"key": key, "pages": len(hit.pages), "complete": hit.complete}
 
     @app.get("/api/preview/{key}/{page:int}.png")
