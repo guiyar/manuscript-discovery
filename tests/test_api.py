@@ -232,3 +232,15 @@ def test_both_line_spacings_typeset(client, spacing):
     )
     assert r.status_code == 200 and r.content.startswith(b"%PDF")
     assert preview(client, line_spacing=spacing).status_code == 200
+
+
+@pytest.mark.parametrize("offset", [-1, 100_001, 2**63, 10**100])
+def test_invalid_search_offsets_are_rejected(client, offset):
+    assert client.get("/api/translations", params={"offset": offset}).status_code == 422
+
+
+def test_search_offset_boundary(client):
+    assert client.get("/api/translations", params={"offset": 100_000}).json() == []
+    first = client.get("/api/translations", params={"limit": 1, "offset": 0}).json()
+    second = client.get("/api/translations", params={"limit": 1, "offset": 1}).json()
+    assert first and second and first != second

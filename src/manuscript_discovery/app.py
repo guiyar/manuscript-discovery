@@ -260,7 +260,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         q: Annotated[str | None, Query(max_length=100)] = None,
         lang: Annotated[str | None, Query(max_length=8)] = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
-        offset: Annotated[int, Query(ge=0)] = 0,
+        offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
     ):
         return [_summary(t) for t in library.search(q, lang, limit, offset)]
 
