@@ -41,9 +41,11 @@ let
 
   # Separate identities prevent a compromised web process from accessing an
   # ingestion process's /proc/<pid>/root, even during a restart.
-  appEnvironment = lib.mapAttrs' (
-    name: value: lib.nameValuePair "MANUSCRIPT_${lib.toUpper name}" value
-  ) cfg.settings // { MANUSCRIPT_DB_PATH = cfg.dbPath; };
+  appEnvironment =
+    lib.mapAttrs' (name: value: lib.nameValuePair "MANUSCRIPT_${lib.toUpper name}" value) cfg.settings
+    // {
+      MANUSCRIPT_DB_PATH = cfg.dbPath;
+    };
 
   sandbox = {
     User = user;
@@ -72,7 +74,10 @@ let
     SystemCallArchitectures = "native";
     RemoveIPC = true;
     MemoryDenyWriteExecute = true;
-    SystemCallFilter = [ "@system-service" "~@privileged" ];
+    SystemCallFilter = [
+      "@system-service"
+      "~@privileged"
+    ];
     CPUQuota = "200%";
     CPUWeight = 50;
     MemoryHigh = "1536M";
@@ -213,48 +218,64 @@ in
         systemd.services.manuscript-discovery = {
           wantedBy = [ "multi-user.target" ];
           requires = lib.optional hasSources ingestUnit;
-          after = [ "systemd-tmpfiles-setup.service" ]
-            ++ lib.optional hasSources ingestUnit
-            ++ lib.optional (!nginx.enable) "network.target";
+          after = [
+            "systemd-tmpfiles-setup.service"
+          ]
+          ++ lib.optional hasSources ingestUnit
+          ++ lib.optional (!nginx.enable) "network.target";
           unitConfig.RequiresMountsFor = dbDir;
-          environment = appEnvironment // (
-            if nginx.enable then
-              { MANUSCRIPT_UNIX_SOCKET = socket; }
-            else
-              {
-                MANUSCRIPT_HOST = cfg.host;
-                MANUSCRIPT_PORT = toString cfg.port;
-              }
-          );
-          serviceConfig = sandbox // {
-            ExecStart = "${exe} serve";
-            # Ingestion writes a potentially large database; only serving has this cap.
-            LimitFSIZE = "64M";
-            Restart = "on-failure";
-            RootDirectory = rootDir;
-            BindReadOnlyPaths = [ "/nix/store" dbDir ];
-            SupplementaryGroups = [ dbGroup ];
-            # No StateDirectory, BindPaths or ReadWritePaths: SQLite cannot be
-            # changed even by code executing as the service user.
-            RestrictAddressFamilies =
+          environment =
+            appEnvironment
+            // (
               if nginx.enable then
-                [ "AF_UNIX" ]
+                { MANUSCRIPT_UNIX_SOCKET = socket; }
               else
-                [ "AF_INET" "AF_INET6" "AF_UNIX" ];
-          }
-          // lib.optionalAttrs nginx.enable {
-            PrivateNetwork = true;
-            IPAddressDeny = "any";
-            RuntimeDirectory = "manuscript-discovery";
-            RuntimeDirectoryMode = "0750";
-          };
+                {
+                  MANUSCRIPT_HOST = cfg.host;
+                  MANUSCRIPT_PORT = toString cfg.port;
+                }
+            );
+          serviceConfig =
+            sandbox
+            // {
+              ExecStart = "${exe} serve";
+              # Ingestion writes a potentially large database; only serving has this cap.
+              LimitFSIZE = "64M";
+              Restart = "on-failure";
+              RootDirectory = rootDir;
+              BindReadOnlyPaths = [
+                "/nix/store"
+                dbDir
+              ];
+              SupplementaryGroups = [ dbGroup ];
+              # No StateDirectory, BindPaths or ReadWritePaths: SQLite cannot be
+              # changed even by code executing as the service user.
+              RestrictAddressFamilies =
+                if nginx.enable then
+                  [ "AF_UNIX" ]
+                else
+                  [
+                    "AF_INET"
+                    "AF_INET6"
+                    "AF_UNIX"
+                  ];
+            }
+            // lib.optionalAttrs nginx.enable {
+              PrivateNetwork = true;
+              IPAddressDeny = "any";
+              RuntimeDirectory = "manuscript-discovery";
+              RuntimeDirectoryMode = "0750";
+            };
         };
 
         systemd.services.manuscript-discovery-ingest = lib.mkIf hasSources {
           description = "Ingest Manuscript Discovery translations";
           after = [ "systemd-tmpfiles-setup.service" ];
           unitConfig = {
-            RequiresMountsFor = [ dbDir (toString cfg.sourceDir) ];
+            RequiresMountsFor = [
+              dbDir
+              (toString cfg.sourceDir)
+            ];
             # Start through the web unit, not independently during serving.
             RefuseManualStart = true;
           };
@@ -265,12 +286,21 @@ in
             Group = dbGroup;
             UMask = "0027";
             RemainAfterExit = false;
-            ExecStart = utils.escapeSystemdExecArgs [ exe "ingest" (toString cfg.sourceDir) "--jobs" "2" ];
+            ExecStart = utils.escapeSystemdExecArgs [
+              exe
+              "ingest"
+              (toString cfg.sourceDir)
+              "--jobs"
+              "2"
+            ];
             TimeoutStartSec = "1h";
             RootDirectory = ingestRoot;
             StateDirectory = "manuscript-discovery";
             StateDirectoryMode = "0750";
-            BindReadOnlyPaths = [ "/nix/store" (toString cfg.sourceDir) ];
+            BindReadOnlyPaths = [
+              "/nix/store"
+              (toString cfg.sourceDir)
+            ];
             BindPaths = lib.optional (dbDir != stateDir) dbDir;
             ReadWritePaths = [ dbDir ];
             PrivateNetwork = true;
@@ -292,7 +322,8 @@ in
         systemd.tmpfiles.rules = [
           "d ${rootDir} 0755 root root -"
           "d ${stateDir} 0750 ${if hasSources then ingestUser else user} ${dbGroup} -"
-        ] ++ lib.optionals hasSources [
+        ]
+        ++ lib.optionals hasSources [
           "d ${ingestRoot} 0755 root root -"
         ];
       }

@@ -389,7 +389,9 @@ def test_serve_trusts_forwarded_headers_only_from_the_configured_proxies(
     assert seen["server_header"] is False and seen["timeout_graceful_shutdown"] > 0
 
 
-def test_identical_previews_share_render_and_one_cancel_does_not_kill_it(db_path, monkeypatch):
+def test_identical_previews_share_render_and_one_cancel_does_not_kill_it(
+    db_path, monkeypatch
+):
     import manuscript_discovery.app as app_module
 
     async def scenario():
@@ -420,7 +422,9 @@ def test_identical_previews_share_render_and_one_cancel_does_not_kill_it(db_path
         monkeypatch.setattr(app_module, "render_png", slow_png)
         app = create_app(Settings(db_path=db_path, max_concurrent=2, max_waiting=0))
         params = {"translation": "eng-kjv2006", "book": "EPH", "c1": 1}
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://t"
+        ) as c:
             a = asyncio.create_task(c.get("/api/preview", params=params))
             await asyncio.wait_for(entered.wait(), 5)
             b = asyncio.create_task(c.get("/api/preview", params=params))
@@ -459,7 +463,9 @@ def test_abandoned_preview_is_cancelled_and_can_be_retried(db_path, monkeypatch)
         monkeypatch.setattr(app_module, "render_png", slow_png)
         app = create_app(Settings(db_path=db_path, max_concurrent=1, max_waiting=0))
         params = {"translation": "eng-kjv2006", "book": "EPH", "c1": 1}
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://t"
+        ) as c:
             a = asyncio.create_task(c.get("/api/preview", params=params))
             await asyncio.wait_for(entered.wait(), 5)
             a.cancel()

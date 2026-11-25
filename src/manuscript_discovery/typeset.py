@@ -88,7 +88,7 @@ async def _drain(stream: asyncio.StreamReader | None) -> bytes:
         return b""
     kept = bytearray()
     while chunk := await stream.read(8192):
-        kept.extend(chunk[:max(0, _DIAGNOSTIC_BYTES - len(kept))])
+        kept.extend(chunk[: max(0, _DIAGNOSTIC_BYTES - len(kept))])
     return bytes(kept)
 
 
@@ -236,6 +236,8 @@ async def render_png(
         gate,
         args,
         "out-{0p}.png",
-        lambda w: read_pages(w, settings.max_preview_mb * _MIB, settings.preview_pages + 1),
+        lambda w: read_pages(
+            w, settings.max_preview_mb * _MIB, settings.preview_pages + 1
+        ),
         abort,
     )
