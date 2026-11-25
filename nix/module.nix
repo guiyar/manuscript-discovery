@@ -27,6 +27,7 @@ let
     proxy_send_timeout 10s;
     proxy_read_timeout ${nginx.readTimeout};
     proxy_next_upstream off;
+    limit_req zone=md_global burst=100 nodelay;
     limit_except GET HEAD { deny all; }
   '';
 
@@ -351,7 +352,6 @@ in
               txt "";
             }
             limit_req_zone $md_pdf_key zone=md_pdf:10m rate=${nginx.rateLimit.pdf};
-            limit_req_status 429;
             # Global limits
             limit_req_zone $server_name zone=md_global:1m rate=60r/s;
             limit_req_zone $server_name zone=md_preview_global:1m rate=10r/s;
@@ -376,6 +376,7 @@ in
               keepalive_timeout 30s;
               limit_conn md_connections 32;
               limit_conn_status 429;
+              limit_req_status 429;
             '';
             locations = {
               "/" = {
@@ -384,7 +385,6 @@ in
                 extraConfig = ''
                   ${proxy}
                   limit_req zone=md_other burst=60 nodelay;
-                  limit_req zone=md_global burst=100 nodelay;
                 '';
               };
               "= /api/preview" = {
