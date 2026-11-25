@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     max_pdf_mb: int = Field(32, ge=1, le=1024)  # maximum PDF response size
     max_preview_mb: int = Field(32, ge=1, le=1024)  # combined PNG output size
     preview_cache_mb: float = Field(64, gt=0)  # rendered previews kept in memory
+    limit_concurrency: int = Field(64, ge=2)  # Uvicorn connections or tasks
     host: str = "127.0.0.1"
     port: int = Field(8000, ge=1, le=65535)
     unix_socket: Path | None = (
