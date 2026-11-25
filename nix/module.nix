@@ -132,6 +132,14 @@ in
           }
         ];
 
+        # os.cpu_count() is not the unit's CPUQuota. Keep the shared-server defaults
+        # conservative; explicit settings on the host take precedence.
+        services.manuscript-discovery.settings = {
+          max_concurrent = lib.mkDefault "1";
+          max_waiting = lib.mkDefault "4";
+          typst_jobs = lib.mkDefault "2";
+        };
+
         users.users.${user} = {
           isSystemUser = true;
           group = user;

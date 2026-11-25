@@ -186,3 +186,24 @@ def test_cancelling_the_startup_font_check_leaves_nothing_running(tmp_path):
     assert abandoned == []
     time.sleep(0.3)
     assert leaked_processes(marker) == []
+
+
+def test_configured_typst_jobs_are_passed_to_compiler(tmp_path):
+    import json
+    import sys
+
+    script = tmp_path / "typst"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "Path(sys.argv[-1].replace('{0p}', '1')).write_text(json.dumps(sys.argv))\n"
+    )
+    script.chmod(0o700)
+    for jobs in (None, 2):
+        pages = run(render_png({}, Settings(typst_bin=str(script), typst_jobs=jobs), asyncio.Semaphore(1)))
+        args = json.loads(pages[0])
+        if jobs is None:
+            assert "--jobs" not in args
+        else:
+            assert args[args.index("--jobs") + 1] == str(jobs)

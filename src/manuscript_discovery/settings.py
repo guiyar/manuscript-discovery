@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     max_concurrent: int = Field(
         default_factory=lambda: os.cpu_count() or 1, ge=1
     )  # concurrent document requests, including Typst: one per core
+    typst_jobs: int | None = Field(None, ge=1)  # parallel jobs per Typst compiler
     max_waiting: int = Field(
         16, ge=0
     )  # document requests allowed to queue; more are refused with 503

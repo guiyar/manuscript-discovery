@@ -122,6 +122,14 @@ security.acme.acceptTerms = true;
 security.acme.defaults.email = "ops@example.org";
 ```
 
+The NixOS module defaults to one concurrent document request, four queued
+requests and two parallel jobs per Typst compiler, matching its conservative
+200% CPU quota. Override `settings.max_concurrent`, `settings.max_waiting` and
+`settings.typst_jobs` on the host after measuring memory and CPU usage. The
+startup font self-test shares the compiler limit. Outside NixOS, `TYPST_JOBS`
+(default: unset) leaves Typst's own parallelism unchanged. Queueing time is
+additional to the render timeout; a proxy may time out first during overload.
+
 The app then listens on a Unix socket instead of a TCP port, which is what
 makes the rest tighter:
 

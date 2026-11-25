@@ -124,6 +124,8 @@ async def _compile(
                 "short",
                 *args,
             ]
+            if settings.typst_jobs is not None:
+                cmd += ["--jobs", str(settings.typst_jobs)]
             if settings.font_dir:
                 cmd += ["--ignore-system-fonts", "--font-path", str(settings.font_dir)]
             cmd += [str(work / "book.typ"), str(work / output)]

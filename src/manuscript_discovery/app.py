@@ -104,7 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Admit requests before loading chapters, and hold the slot until the response
     # is constructed. The separate compiler gate must never be acquired recursively.
     document_gate = Gate(settings.max_concurrent, settings.max_waiting)
-    gate = Gate(settings.max_concurrent, settings.max_waiting)
+    gate = asyncio.Semaphore(settings.max_concurrent)
     # Rendered previews, keyed by a hash of exactly what was rendered. Only touched from the
     # event loop, so no locking. Sized in bytes.
     previews: LRUCache = LRUCache(
@@ -113,7 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     async def _run_self_test() -> None:
-        app.state.health = await diagnostics.run(settings)
+        app.state.health = await diagnostics.run(settings, gate=gate)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
