@@ -110,7 +110,8 @@ def test_bad_requests_say_what_is_wrong(client, params, status, message):
 def test_missing_library_gives_503(tmp_path):
     with TestClient(create_app(Settings(db_path=tmp_path / "none.sqlite"))) as c:
         r = c.get("/api/translations")
-        assert r.status_code == 503 and "ingest" in r.json()["detail"]
+        assert r.status_code == 503
+        assert r.json() == {"detail": "Library unavailable"}
 
 
 @pytest.mark.skipif(not HAS_TYPST, reason="typst not installed")

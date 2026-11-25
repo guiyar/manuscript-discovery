@@ -204,7 +204,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(LibraryUnavailable)
     async def unavailable(_, exc: LibraryUnavailable):
-        return JSONResponse({"detail": str(exc)}, status_code=503)
+        log.warning("Library unavailable: %s", exc)
+        return JSONResponse({"detail": "Library unavailable"}, status_code=503)
 
     @app.exception_handler(Busy)
     async def busy(_, exc: Busy):
@@ -233,14 +234,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Readiness: it can actually serve passages (a library with translations, and Typst)."""
         problems = []
         if not shutil.which(settings.typst_bin):
-            problems.append(f"Typst not found ({settings.typst_bin})")
+            problems.append("Typst not found")
         try:
             translations = await run_in_threadpool(library.count)
             if translations == 0:
                 problems.append("the library has no translations")
         except LibraryUnavailable as e:
             translations = 0
-            problems.append(str(e))
+            log.warning("Library unavailable: %s", e)
+            problems.append("Library unavailable; run manuscript-discovery ingest")
         return JSONResponse(
             {"ready": not problems, "translations": translations, "problems": problems},
             status_code=503 if problems else 200,
