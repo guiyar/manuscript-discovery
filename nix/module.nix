@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  utils,
   ...
 }:
 let
@@ -30,6 +31,60 @@ let
   '';
 
   rootDir = "/var/lib/manuscript-discovery-root";
+  ingestRoot = "${rootDir}-ingest";
+  stateDir = "/var/lib/manuscript-discovery";
+  dbDir = builtins.dirOf cfg.dbPath;
+  ingestUnit = "manuscript-discovery-ingest.service";
+  hasSources = cfg.sourceDir != null;
+  ingestUser = "manuscript-discovery-ingest";
+  dbGroup = "manuscript-discovery-db";
+
+  # Separate identities prevent a compromised web process from accessing an
+  # ingestion process's /proc/<pid>/root, even during a restart.
+  appEnvironment = lib.mapAttrs' (
+    name: value: lib.nameValuePair "MANUSCRIPT_${lib.toUpper name}" value
+  ) cfg.settings // { MANUSCRIPT_DB_PATH = cfg.dbPath; };
+
+  sandbox = {
+    User = user;
+    Group = user;
+    UMask = "0077";
+    MountAPIVFS = true;
+    ProtectProc = "invisible";
+    ProcSubset = "pid";
+    WorkingDirectory = "/";
+    ProtectSystem = "strict";
+    ProtectHome = true;
+    PrivateTmp = "disconnected";
+    PrivateDevices = true;
+    NoNewPrivileges = true;
+    CapabilityBoundingSet = "";
+    ProtectKernelTunables = true;
+    ProtectKernelModules = true;
+    ProtectKernelLogs = true;
+    ProtectControlGroups = true;
+    ProtectClock = true;
+    ProtectHostname = true;
+    LockPersonality = true;
+    RestrictRealtime = true;
+    RestrictSUIDSGID = true;
+    RestrictNamespaces = true;
+    SystemCallArchitectures = "native";
+    RemoveIPC = true;
+    MemoryDenyWriteExecute = true;
+    SystemCallFilter = [ "@system-service" "~@privileged" ];
+    CPUQuota = "200%";
+    CPUWeight = 50;
+    MemoryHigh = "1536M";
+    MemoryMax = "2G";
+    MemorySwapMax = "0";
+    TasksMax = 128;
+    IOWeight = 50;
+    LimitNOFILE = 4096;
+    LimitCORE = 0;
+    LogRateLimitIntervalSec = "30s";
+    LogRateLimitBurst = 200;
+  };
 in
 {
   options.services.manuscript-discovery = {
@@ -42,7 +97,7 @@ in
     dbPath = lib.mkOption {
       type = lib.types.str;
       default = "/var/lib/manuscript-discovery/library.sqlite";
-      description = "Library database. Built by ingest; opened read-only by the web app.";
+      description = "Absolute library database path, in a dedicated directory. Built by ingest; mounted read-only by the web app.";
     };
     sourceDir = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
@@ -127,6 +182,10 @@ in
       {
         assertions = [
           {
+            assertion = lib.hasPrefix "/" cfg.dbPath && dbDir != "/";
+            message = "services.manuscript-discovery.dbPath must be absolute and in a dedicated directory.";
+          }
+          {
             assertion = !nginx.enable || nginx.domain != null;
             message = "services.manuscript-discovery.nginx.enable needs services.manuscript-discovery.nginx.domain.";
           }
@@ -145,14 +204,20 @@ in
           group = user;
         };
         users.groups.${user} = { };
+        users.groups.${dbGroup} = { };
+        users.users.${ingestUser} = lib.mkIf hasSources {
+          isSystemUser = true;
+          group = dbGroup;
+        };
 
         systemd.services.manuscript-discovery = {
           wantedBy = [ "multi-user.target" ];
-          after = lib.optional (!nginx.enable) "network.target";
-          environment = {
-            MANUSCRIPT_DB_PATH = cfg.dbPath;
-          }
-          // (
+          requires = lib.optional hasSources ingestUnit;
+          after = [ "systemd-tmpfiles-setup.service" ]
+            ++ lib.optional hasSources ingestUnit
+            ++ lib.optional (!nginx.enable) "network.target";
+          unitConfig.RequiresMountsFor = dbDir;
+          environment = appEnvironment // (
             if nginx.enable then
               { MANUSCRIPT_UNIX_SOCKET = socket; }
             else
@@ -160,86 +225,55 @@ in
                 MANUSCRIPT_HOST = cfg.host;
                 MANUSCRIPT_PORT = toString cfg.port;
               }
-          )
-          // lib.mapAttrs' (
-            name: value: lib.nameValuePair "MANUSCRIPT_${lib.toUpper name}" value
-          ) cfg.settings;
-          serviceConfig = {
-            ExecStartPre = lib.optional (cfg.sourceDir != null) "${exe} ingest ${cfg.sourceDir}";
+          );
+          serviceConfig = sandbox // {
             ExecStart = "${exe} serve";
-            TimeoutStartSec = "1h"; # a first ingest of many translations takes a while
             Restart = "on-failure";
-            User = user;
-            Group = user;
-            StateDirectory = "manuscript-discovery";
-            UMask = "0077";
-            # Typst runs as a child process on user-influenced input: keep the whole unit boxed in.
             RootDirectory = rootDir;
-            MountAPIVFS = true;
-            BindReadOnlyPaths = [
-              "/nix/store"
-            ]
-            ++ lib.optional (cfg.sourceDir != null) (toString cfg.sourceDir);
-            BindPaths = lib.optional (builtins.dirOf cfg.dbPath != "/var/lib/manuscript-discovery") (
-              builtins.dirOf cfg.dbPath
-            );
-            ProtectProc = "invisible";
-            ProcSubset = "pid";
-            StateDirectoryMode = "0700";
-            WorkingDirectory = "/";
-            ProtectSystem = "strict";
-            ReadWritePaths = [ (builtins.dirOf cfg.dbPath) ];
-            ReadOnlyPaths = lib.optional (cfg.sourceDir != null) (toString cfg.sourceDir);
-            ProtectHome = true;
-            PrivateTmp = "disconnected";
-            PrivateDevices = true;
-            NoNewPrivileges = true;
-            CapabilityBoundingSet = "";
-            ProtectKernelTunables = true;
-            ProtectKernelModules = true;
-            ProtectKernelLogs = true;
-            ProtectControlGroups = true;
-            ProtectClock = true;
-            ProtectHostname = true;
-            LockPersonality = true;
-            RestrictRealtime = true;
-            RestrictSUIDSGID = true;
-            RestrictNamespaces = true;
-            SystemCallArchitectures = "native";
-            RemoveIPC = true;
-            MemoryDenyWriteExecute = true;
+            BindReadOnlyPaths = [ "/nix/store" dbDir ];
+            SupplementaryGroups = [ dbGroup ];
+            # No StateDirectory, BindPaths or ReadWritePaths: SQLite cannot be
+            # changed even by code executing as the service user.
             RestrictAddressFamilies =
               if nginx.enable then
                 [ "AF_UNIX" ]
               else
-                [
-                  "AF_INET"
-                  "AF_INET6"
-                  "AF_UNIX"
-                ];
-            SystemCallFilter = [
-              "@system-service"
-              "~@privileged"
-            ];
-            CPUQuota = "200%";
-            CPUWeight = 50;
-            MemoryHigh = "1536M";
-            MemoryMax = "2G";
-            MemorySwapMax = "0";
-            TasksMax = 128;
-            IOWeight = 50;
-            LimitNOFILE = 4096;
-            LimitCORE = 0;
-            LogRateLimitIntervalSec = "30s";
-            LogRateLimitBurst = 200;
+                [ "AF_INET" "AF_INET6" "AF_UNIX" ];
           }
           // lib.optionalAttrs nginx.enable {
-            # Behind nginx the app needs no network at all: it, and every Typst it starts, run in an
-            # empty network namespace and talk only through the socket.
             PrivateNetwork = true;
             IPAddressDeny = "any";
             RuntimeDirectory = "manuscript-discovery";
             RuntimeDirectoryMode = "0750";
+          };
+        };
+
+        systemd.services.manuscript-discovery-ingest = lib.mkIf hasSources {
+          description = "Ingest Manuscript Discovery translations";
+          after = [ "systemd-tmpfiles-setup.service" ];
+          unitConfig = {
+            RequiresMountsFor = [ dbDir (toString cfg.sourceDir) ];
+            # Start through the web unit, not independently during serving.
+            RefuseManualStart = true;
+          };
+          environment = appEnvironment;
+          serviceConfig = sandbox // {
+            Type = "oneshot";
+            User = ingestUser;
+            Group = dbGroup;
+            UMask = "0027";
+            RemainAfterExit = false;
+            ExecStart = utils.escapeSystemdExecArgs [ exe "ingest" (toString cfg.sourceDir) "--jobs" "2" ];
+            TimeoutStartSec = "1h";
+            RootDirectory = ingestRoot;
+            StateDirectory = "manuscript-discovery";
+            StateDirectoryMode = "0750";
+            BindReadOnlyPaths = [ "/nix/store" (toString cfg.sourceDir) ];
+            BindPaths = lib.optional (dbDir != stateDir) dbDir;
+            ReadWritePaths = [ dbDir ];
+            PrivateNetwork = true;
+            IPAddressDeny = "any";
+            RestrictAddressFamilies = [ "AF_UNIX" ];
           };
         };
 
@@ -255,6 +289,9 @@ in
 
         systemd.tmpfiles.rules = [
           "d ${rootDir} 0755 root root -"
+          "d ${stateDir} 0750 ${if hasSources then ingestUser else user} ${dbGroup} -"
+        ] ++ lib.optionals hasSources [
+          "d ${ingestRoot} 0755 root root -"
         ];
       }
 

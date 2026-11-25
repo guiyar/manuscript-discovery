@@ -130,6 +130,23 @@ startup font self-test shares the compiler limit. Outside NixOS, `TYPST_JOBS`
 (default: unset) leaves Typst's own parallelism unchanged. Queueing time is
 additional to the render timeout; a proxy may time out first during overload.
 
+On NixOS, ingestion runs in a separate oneshot unit before the web service
+starts (only when `sourceDir` is set). The web unit mounts the database's
+parent directory read-only and does not mount source archives. The ingestion
+unit uses its own `manuscript-discovery-ingest` UID; the web unit receives
+read access through the dedicated `manuscript-discovery-db` group (not nginx's
+socket group). The default database is migrated by tmpfiles to mode 0640 and
+the new owner when ingestion is enabled. Stop the old web service before
+switching to this version. For a custom `dbPath` with ingestion, arrange for
+its parent directory to be owned by
+`manuscript-discovery-ingest:manuscript-discovery-db` (mode 0750) and the
+database to have the same owner (mode 0640) before starting. Ensure the
+ingestion user can read the source archives. Use a dedicated database parent
+directory; do not put other private data there. To refresh sources, restart
+`manuscript-discovery.service`, not the ingestion unit directly. Stop the web
+unit before running any external database writer. With no `sourceDir`, provide
+an existing database as before.
+
 The app then listens on a Unix socket instead of a TCP port, which is what
 makes the rest tighter:
 
