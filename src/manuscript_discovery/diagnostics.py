@@ -12,7 +12,7 @@ import asyncio
 import logging
 
 from .settings import Settings
-from .typeset import TypesetError, _compile, finish, read_pages
+from .typeset import TypesetError, _compile, finish, read_pages, spawn_typst
 from .typography import CJK_FONTS
 
 log = logging.getLogger(__name__)
@@ -33,13 +33,13 @@ def _source() -> str:
 
 async def _version(settings: Settings) -> str | None:
     try:
-        proc = await asyncio.create_subprocess_exec(
+        proc = await spawn_typst(
             settings.typst_bin,
             "--version",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        out, _ = await finish(proc, 10)
+        out, _ = await finish(proc, 10, process_group=True)
         return out.decode().strip() or None
     except (OSError, TypesetError):
         return None
