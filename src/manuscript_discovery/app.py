@@ -101,6 +101,9 @@ def _summary(t: Translation) -> dict:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     library = Library(settings.db_path)
+    # Admit requests before loading chapters, and hold the slot until the response
+    # is constructed. The separate compiler gate must never be acquired recursively.
+    document_gate = Gate(settings.max_concurrent, settings.max_waiting)
     gate = Gate(settings.max_concurrent, settings.max_waiting)
     # Rendered previews, keyed by a hash of exactly what was rendered. Only touched from the
     # event loop, so no locking. Sized in bytes.
@@ -226,48 +229,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/preview")
     async def preview(q: Annotated[RenderQuery, Query()], http: HttpRequest):
         """Render the first pages as low-resolution PNGs (screen preview, not for printing)."""
-        try:
-            doc = await run_in_threadpool(
-                build_document, library, _to_request(q), settings.max_verses
-            )
-        except SelectionError as e:
-            raise HTTPException(e.status, e.message) from None
-        doc = doc.truncated(doc.preview_chars(settings.preview_pages))
-        data = doc.typst_data()
-        key = hashlib.sha256(
-            json.dumps(
-                [data, settings.preview_ppi, settings.preview_pages],
-                sort_keys=True,
-                ensure_ascii=False,
-            ).encode()
-        ).hexdigest()[:32]
-        hit = previews.get(key)
-        if hit is None:
-            started = time.perf_counter()
-            try:
-                pages = await render_png(
-                    data, settings, gate, abort=http.is_disconnected
-                )
-            except Aborted:
-                log.info("preview %s abandoned: client gone", key[:8])
+        async with document_gate:
+            if await http.is_disconnected():
                 return Response(status_code=499)
-            except TypesetError as e:
-                raise HTTPException(500, str(e)) from None
-            hit = Preview(
-                pages[: settings.preview_pages],
-                doc.complete and len(pages) <= settings.preview_pages,
-            )
-            with contextlib.suppress(
-                ValueError
-            ):  # larger than the whole cache: just don't keep it
-                previews[key] = hit
-            log.info(
-                "preview %s rendered: %d pages, %.0f ms",
-                key[:8],
-                len(hit.pages),
-                (time.perf_counter() - started) * 1000,
-            )
-        return {"key": key, "pages": len(hit.pages), "complete": hit.complete}
+            try:
+                doc = await run_in_threadpool(
+                    build_document, library, _to_request(q), settings.max_verses
+                )
+            except SelectionError as e:
+                raise HTTPException(e.status, e.message) from None
+            doc = doc.truncated(doc.preview_chars(settings.preview_pages))
+            data = doc.typst_data()
+            key = hashlib.sha256(
+                json.dumps(
+                    [data, settings.preview_ppi, settings.preview_pages],
+                    sort_keys=True,
+                    ensure_ascii=False,
+                ).encode()
+            ).hexdigest()[:32]
+            hit = previews.get(key)
+            if hit is None:
+                started = time.perf_counter()
+                try:
+                    pages = await render_png(
+                        data, settings, gate, abort=http.is_disconnected
+                    )
+                except Aborted:
+                    log.info("preview %s abandoned: client gone", key[:8])
+                    return Response(status_code=499)
+                except TypesetError as e:
+                    raise HTTPException(500, str(e)) from None
+                hit = Preview(
+                    pages[: settings.preview_pages],
+                    doc.complete and len(pages) <= settings.preview_pages,
+                )
+                with contextlib.suppress(
+                    ValueError
+                ):  # larger than the whole cache: just don't keep it
+                    previews[key] = hit
+                log.info(
+                    "preview %s rendered: %d pages, %.0f ms",
+                    key[:8],
+                    len(hit.pages),
+                    (time.perf_counter() - started) * 1000,
+                )
+            return {"key": key, "pages": len(hit.pages), "complete": hit.complete}
 
     @app.get("/api/preview/{key}/{page:int}.png")
     async def preview_page(key: PreviewKey, page: int):
@@ -285,36 +291,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/render")
     async def render(q: Annotated[RenderQuery, Query()], http: HttpRequest):
-        try:
-            doc = await run_in_threadpool(
-                build_document, library, _to_request(q), settings.max_verses
-            )
-        except SelectionError as e:
-            raise HTTPException(e.status, e.message) from None
-        disposition = "attachment" if q.download else "inline"
-        if q.format == "txt":
+        async with document_gate:
+            if await http.is_disconnected():
+                return Response(status_code=499)
+            try:
+                doc = await run_in_threadpool(
+                    build_document, library, _to_request(q), settings.max_verses
+                )
+            except SelectionError as e:
+                raise HTTPException(e.status, e.message) from None
+            disposition = "attachment" if q.download else "inline"
+            if q.format == "txt":
+                return Response(
+                    doc.plain_text(),
+                    media_type="text/plain; charset=utf-8",
+                    headers={
+                        "Content-Disposition": f'{disposition}; filename="{doc.filename}.txt"'
+                    },
+                )
+            try:
+                pdf = await render_pdf(
+                    doc.typst_data(), settings, gate, abort=http.is_disconnected
+                )
+            except Aborted:
+                return Response(status_code=499)
+            except TypesetError as e:
+                raise HTTPException(500, str(e)) from None
             return Response(
-                doc.plain_text(),
-                media_type="text/plain; charset=utf-8",
+                pdf,
+                media_type="application/pdf",
                 headers={
-                    "Content-Disposition": f'{disposition}; filename="{doc.filename}.txt"'
+                    "Content-Disposition": f'{disposition}; filename="{doc.filename}.pdf"'
                 },
             )
-        try:
-            pdf = await render_pdf(
-                doc.typst_data(), settings, gate, abort=http.is_disconnected
-            )
-        except Aborted:
-            return Response(status_code=499)
-        except TypesetError as e:
-            raise HTTPException(500, str(e)) from None
-        return Response(
-            pdf,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'{disposition}; filename="{doc.filename}.pdf"'
-            },
-        )
 
     # Last, so every API route above wins; this serves the UI at "/".
     log.info(

@@ -77,12 +77,14 @@ expects:
     policy. The proxy should add HSTS, not overwrite the CSP, and must not
     rewrite the HTML (the hashes would stop matching). No `Server` header; no
     API docs or schema.
-- **Load shedding.** Typst renders are CPU-bound, so at most `MAX_CONCURRENT`
-    (default: one per core) run at once, at most `MAX_WAITING` (16) queue behind
-    them, and the rest get `503` with `Retry-After: 5`, which the UI shows as
-    “busy”. One render is killed after `TIMEOUT_S` (30), or at once if its
-    client leaves, so set the proxy's read timeout above that. Cached previews
-    never wait.
+- **Load shedding.** At most `MAX_CONCURRENT` (default: one per core)
+    preview and render requests run at once, including document construction and
+    plain-text output. At most `MAX_WAITING` (16) queue before loading chapters;
+    the rest get `503` with `Retry-After: 5`, which the UI shows as “busy”.
+    One Typst render is killed after `TIMEOUT_S` (30), or if its client leaves.
+    The proxy read timeout also needs to allow for queueing and document
+    construction. Cached preview lookups share the request limit, but fetching
+    an already-rendered PNG does not.
 - **Client address.** Set `MANUSCRIPT_TRUSTED_PROXIES` to the proxy's address
     (default `127.0.0.1`) so `X-Forwarded-For` is honoured from it and from
     nobody else; use `*` only when nothing else can reach the port. Without

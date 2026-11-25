@@ -25,15 +25,15 @@ class TypesetError(RuntimeError):
 
 
 class Busy(Exception):
-    """Too many renders are already waiting for a CPU slot."""
+    """Too many requests are already waiting for a work slot."""
 
 
 class Gate:
-    """Limits concurrent Typst renders to the CPUs available and bounds the queue behind them.
+    """Limits concurrent work to a fixed number of slots and bounds the queue behind them.
 
     A semaphore alone queues without limit, so a burst makes every request slow and the process holds
-    them all. Past `max_waiting` queued renders, new ones fail fast with Busy (HTTP 503), which a proxy
-    or browser can retry, while the render slots keep working at full speed."""
+    them all. Past `max_waiting` queued requests, new ones fail fast with Busy (HTTP 503), which a proxy
+    or browser can retry, while the occupied slots keep working at full speed."""
 
     def __init__(self, slots: int, max_waiting: int) -> None:
         self._sem = asyncio.Semaphore(slots)

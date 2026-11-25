@@ -225,6 +225,15 @@ def test_a_burst_gets_503_with_retry_after_while_the_server_stays_responsive(
 ):
     import manuscript_discovery.app as app_module
 
+    builds = []
+    real_build = app_module.build_document
+
+    def counting_build(*args):
+        builds.append(1)
+        return real_build(*args)
+
+    monkeypatch.setattr(app_module, "build_document", counting_build)
+
     async def slow_png(data, settings, gate, abort=None):
         async with gate:
             await asyncio.sleep(0.5)
@@ -261,8 +270,89 @@ def test_a_burst_gets_503_with_retry_after_while_the_server_stays_responsive(
     assert codes.count(200) == 3 and codes.count(503) == 5, (
         codes
     )  # 1 running + 2 queued, rest refused
+    assert len(builds) == 3  # rejected requests never load or decompress chapters
     refused = next(r for r in responses if r.status_code == 503)
     assert refused.headers["retry-after"] == "5" and "busy" in refused.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "path,output",
+    [
+        ("/api/preview", "pdf"),
+        ("/api/render", "pdf"),
+        ("/api/render", "txt"),
+    ],
+)
+def test_document_admission_precedes_building_and_is_shared(
+    db_path, monkeypatch, path, output
+):
+    import manuscript_discovery.app as app_module
+
+    real_threadpool = app_module.run_in_threadpool
+
+    async def scenario():
+        building, release_build = asyncio.Event(), asyncio.Event()
+        rendering, release_render = asyncio.Event(), asyncio.Event()
+        builds = []
+
+        async def slow_build(func, *args):
+            if func is app_module.build_document:
+                builds.append(1)
+                building.set()
+                await release_build.wait()
+            return await real_threadpool(func, *args)
+
+        async def slow_render(data, settings, gate, abort=None):
+            async with gate:
+                rendering.set()
+                await release_render.wait()
+            return [b"\x89PNG"] if path == "/api/preview" else b"%PDF"
+
+        monkeypatch.setattr(app_module, "run_in_threadpool", slow_build)
+        monkeypatch.setattr(app_module, "render_png", slow_render)
+        monkeypatch.setattr(app_module, "render_pdf", slow_render)
+        app = create_app(Settings(db_path=db_path, max_concurrent=1, max_waiting=0))
+        params = {"translation": "eng-kjv2006", "book": "EPH", "c1": 1}
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://t"
+        ) as c:
+            running = asyncio.create_task(
+                c.get(path, params={**params, "format": output})
+            )
+
+            async def assert_busy():
+                for route, fmt in (
+                    ("/api/preview", "pdf"),
+                    ("/api/render", "pdf"),
+                    ("/api/render", "txt"),
+                ):
+                    r = await c.get(route, params={**params, "format": fmt})
+                    assert r.status_code == 503
+                    assert r.headers["retry-after"] == "5"
+                assert len(builds) == 1
+                assert (await c.get("/healthz")).status_code == 200
+
+            try:
+                await asyncio.wait_for(building.wait(), timeout=5)
+                await assert_busy()
+                release_build.set()
+                if output == "pdf":
+                    await asyncio.wait_for(rendering.wait(), timeout=5)
+                    await (
+                        assert_busy()
+                    )  # the admission slot survives document construction
+            finally:
+                release_build.set()
+                release_render.set()
+                await asyncio.wait_for(running, timeout=5)
+            assert running.result().status_code == 200
+            # The slot is returned after success and after a selection error.
+            invalid = await c.get("/api/render", params={**params, "v2": 200})
+            assert invalid.status_code == 422
+            recovered = await c.get("/api/render", params={**params, "format": "txt"})
+            assert recovered.status_code == 200
+
+    asyncio.run(scenario())
 
 
 # --- configuration ------------------------------------------------------------------------------

@@ -21,10 +21,10 @@ class Settings(BaseSettings):
     max_verses: int = Field(3000, ge=1, le=10_000)  # largest selection accepted
     max_concurrent: int = Field(
         default_factory=lambda: os.cpu_count() or 1, ge=1
-    )  # Typst is CPU-bound: one per core
+    )  # concurrent document requests, including Typst: one per core
     max_waiting: int = Field(
         16, ge=0
-    )  # renders allowed to queue for a slot; more are refused with 503
+    )  # document requests allowed to queue; more are refused with 503
     timeout_s: float = Field(
         30.0, gt=0, le=300
     )  # one render; keep the proxy's read timeout above this
