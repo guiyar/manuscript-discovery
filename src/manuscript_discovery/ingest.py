@@ -20,6 +20,7 @@ from .usfx import Parsed, load_usfx
 
 log = logging.getLogger(__name__)
 SUFFIX = "_usfx.zip"
+_MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 
 class Source(NamedTuple):
@@ -28,9 +29,15 @@ class Source(NamedTuple):
 
 
 def read_source(path: str) -> Source:  # top level so worker processes can run it
-    with zipfile.ZipFile(path) as zf:
-        parsed = load_usfx(zf)
-        return Source(parsed, read_metadata(zf, fallback_language=parsed.language_code))
+    with open(path, "rb") as f:
+        if f.seek(0, 2) > _MAX_ARCHIVE_BYTES:
+            raise ValueError("USFX archive exceeds compressed size limit")
+        f.seek(0)
+        with zipfile.ZipFile(f) as zf:
+            parsed = load_usfx(zf)
+            return Source(
+                parsed, read_metadata(zf, fallback_language=parsed.language_code)
+            )
 
 
 def translation_id(path: Path) -> str:
@@ -58,7 +65,15 @@ def ingest_paths(
     added = 0
     try:
         for f in discover(paths):
-            tid, digest = translation_id(f), _sha256(f)
+            tid = translation_id(f)
+            try:
+                if f.stat().st_size > _MAX_ARCHIVE_BYTES:
+                    raise ValueError("USFX archive exceeds compressed size limit")
+                digest = _sha256(f)
+            except (OSError, ValueError) as e:
+                log.error("%s: %s", tid, e)
+                failed.append(tid)
+                continue
             if not force and writer.current_sha(tid) == digest:
                 unchanged += 1
             else:

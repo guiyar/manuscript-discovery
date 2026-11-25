@@ -17,6 +17,10 @@ from xml.etree.ElementTree import Element
 
 from defusedxml import ElementTree as ET  # hardened against entity-expansion attacks
 
+_MAX_USFX_BYTES = 64 * 1024 * 1024
+_MAX_XML_DEPTH = 128
+_MAX_XML_ELEMENTS = 1_000_000
+
 
 class Piece(NamedTuple):
     par: int  # paragraph id, unique within a book
@@ -140,7 +144,15 @@ def parse_usfx(stream: IO[bytes]) -> Parsed:
     names: dict[str, str] = {}
     books: dict[str, list[Piece]] = {}
     language = None
-    for _, el in ET.iterparse(stream, events=("end",)):
+    depth = elements = 0
+    for event, el in ET.iterparse(stream, events=("start", "end")):
+        if event == "start":
+            depth += 1
+            elements += 1
+            if depth > _MAX_XML_DEPTH or elements > _MAX_XML_ELEMENTS:
+                raise ValueError("USFX XML exceeds structural limits")
+            continue
+        depth -= 1
         if el.tag == "languageCode":
             language = (el.text or "").strip() or None
         elif el.tag == "book":
@@ -158,5 +170,9 @@ def load_usfx(zf: zipfile.ZipFile) -> Parsed:
     preferred = [n for n in xml if n.lower().endswith("usfx.xml")]
     if not preferred:
         raise ValueError("no *usfx.xml inside the archive")
-    with zf.open(preferred[0]) as f:
+    member = zf.getinfo(preferred[0])
+    if member.file_size > _MAX_USFX_BYTES:
+        raise ValueError("USFX XML exceeds decompressed size limit")
+    # ZipExtFile bounds reads to the member's declared size. Keep parsing streaming.
+    with zf.open(member) as f:
         return parse_usfx(f)
