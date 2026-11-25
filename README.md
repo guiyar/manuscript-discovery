@@ -94,6 +94,9 @@ expects:
     to 64 MiB (`LimitFSIZE`); adjust that limit if raising the application caps.
     Ingestion has no such file-size cap. Each optional metadata XML member
     is limited to 2 MiB of decompressed data; oversized metadata is ignored.
+    Ingestion rejects ZIPs and USFX XML members larger than 64 MiB each, and
+    XML deeper than 128 elements or containing more than a million elements.
+    These are input limits, not a guarantee of bounded parser memory.
 - **Client address.** Set `MANUSCRIPT_TRUSTED_PROXIES` to the proxy's address
     (default `127.0.0.1`) so `X-Forwarded-For` is honoured from it and from
     nobody else; use `*` only when nothing else can reach the port. Without
