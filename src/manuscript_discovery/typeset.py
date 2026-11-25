@@ -18,6 +18,31 @@ from .settings import Settings
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
+_MIB = 1024 * 1024
+_DIAGNOSTIC_BYTES = 64 * 1024
+
+
+def read_bounded(path: Path, max_bytes: int) -> bytes:
+    try:
+        with path.open("rb") as f:
+            data = f.read(max_bytes + 1)
+    except OSError as e:
+        raise TypesetError("Rendered output is unavailable") from e
+    if len(data) > max_bytes:
+        raise TypesetError("Rendered output exceeds size limit")
+    return data
+
+
+def read_pages(work: Path, max_bytes: int, max_pages: int) -> list[bytes]:
+    paths = sorted(work.glob("out-*.png"))
+    if not paths or len(paths) > max_pages:
+        raise TypesetError("Unexpected number of rendered pages")
+    pages = []
+    for path in paths:
+        page = read_bounded(path, max_bytes)
+        max_bytes -= len(page)
+        pages.append(page)
+    return pages
 
 
 class TypesetError(RuntimeError):
@@ -57,6 +82,22 @@ class Aborted(Exception):
     """The client went away while waiting its turn, so no work was started."""
 
 
+async def _drain(stream: asyncio.StreamReader | None) -> bytes:
+    """Drain continuously to avoid a full pipe, retaining only bounded diagnostics."""
+    if stream is None:
+        return b""
+    kept = bytearray()
+    while chunk := await stream.read(8192):
+        kept.extend(chunk[:max(0, _DIAGNOSTIC_BYTES - len(kept))])
+    return bytes(kept)
+
+
+async def _communicate_bounded(proc: asyncio.subprocess.Process) -> tuple[bytes, bytes]:
+    out, err = await asyncio.gather(_drain(proc.stdout), _drain(proc.stderr))
+    await proc.wait()
+    return out, err
+
+
 async def finish(
     proc: asyncio.subprocess.Process,
     timeout_s: float,
@@ -66,7 +107,7 @@ async def finish(
     time runs out, or this task is cancelled, kill the process: an abandoned render must not keep a
     core busy, and a process must never be left for the garbage collector to find. Every wait on a
     Typst process goes through here."""
-    pending = asyncio.ensure_future(proc.communicate())
+    pending = asyncio.create_task(_communicate_bounded(proc))
     deadline = time.monotonic() + timeout_s
     try:
         while True:
@@ -78,10 +119,11 @@ async def finish(
             if abort is not None and await abort():
                 raise Aborted()
     except BaseException:
-        pending.cancel()
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
-        await proc.wait()
+        # Drain the killed process's pipes rather than leaving a paused pipe
+        # behind; waiting on a process with a full pipe can deadlock.
+        await pending
         raise
 
 
@@ -167,7 +209,7 @@ async def render_pdf(
         gate,
         ["--format", "pdf"],
         "out.pdf",
-        lambda w: (w / "out.pdf").read_bytes(),
+        lambda w: read_bounded(w / "out.pdf", settings.max_pdf_mb * _MIB),
         abort,
     )
 
@@ -194,6 +236,6 @@ async def render_png(
         gate,
         args,
         "out-{0p}.png",
-        lambda w: [f.read_bytes() for f in sorted(w.glob("out-*.png"))],
+        lambda w: read_pages(w, settings.max_preview_mb * _MIB, settings.preview_pages + 1),
         abort,
     )

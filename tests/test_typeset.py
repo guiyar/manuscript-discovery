@@ -207,3 +207,37 @@ def test_configured_typst_jobs_are_passed_to_compiler(tmp_path):
             assert "--jobs" not in args
         else:
             assert args[args.index("--jobs") + 1] == str(jobs)
+
+
+def test_output_bounds(tmp_path):
+    from manuscript_discovery.typeset import read_bounded, read_pages
+
+    pdf = tmp_path / "out.pdf"
+    pdf.write_bytes(b"1234")
+    assert read_bounded(pdf, 4) == b"1234"
+    with pytest.raises(TypesetError, match="size limit"):
+        read_bounded(pdf, 3)
+    for i in (1, 2):
+        (tmp_path / f"out-{i}.png").write_bytes(b"1234")
+    assert read_pages(tmp_path, 8, 2) == [b"1234", b"1234"]
+    with pytest.raises(TypesetError, match="size limit"):
+        read_pages(tmp_path, 7, 2)
+    with pytest.raises(TypesetError, match="number"):
+        read_pages(tmp_path, 8, 1)
+
+
+def test_diagnostic_streams_are_drained_but_bounded():
+    import sys
+    from manuscript_discovery.typeset import finish
+
+    async def scenario():
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-c",
+            "import sys; sys.stdout.buffer.write(b'x'*1000000); sys.stderr.buffer.write(b'y'*1000000)",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await finish(proc, 5)
+        assert proc.returncode == 0
+        assert out == b"x" * 65536 and err == b"y" * 65536
+
+    run(scenario())
