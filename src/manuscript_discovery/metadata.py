@@ -18,6 +18,7 @@ from xml.etree.ElementTree import Element, ParseError
 from defusedxml import ElementTree as ET
 
 log = logging.getLogger(__name__)
+_MAX_METADATA_BYTES = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +104,17 @@ def _root(xml: bytes, what: str) -> Element | None:
 
 def _member(zf: zipfile.ZipFile, suffix: str) -> bytes | None:
     name = next((n for n in zf.namelist() if n.lower().endswith(suffix)), None)
-    return zf.read(name) if name else None
+    if name is None:
+        return None
+    if zf.getinfo(name).file_size > _MAX_METADATA_BYTES:
+        log.warning("%s exceeds the metadata size limit; ignoring it", name)
+        return None
+    with zf.open(name) as stream:
+        data = stream.read(_MAX_METADATA_BYTES + 1)
+    if len(data) > _MAX_METADATA_BYTES:
+        log.warning("%s exceeds the metadata size limit; ignoring it", name)
+        return None
+    return data
 
 
 def read_metadata(
