@@ -201,7 +201,13 @@ def test_configured_typst_jobs_are_passed_to_compiler(tmp_path):
     )
     script.chmod(0o700)
     for jobs in (None, 2):
-        pages = run(render_png({}, Settings(typst_bin=str(script), typst_jobs=jobs), asyncio.Semaphore(1)))
+        pages = run(
+            render_png(
+                {},
+                Settings(typst_bin=str(script), typst_jobs=jobs),
+                asyncio.Semaphore(1),
+            )
+        )
         args = json.loads(pages[0])
         if jobs is None:
             assert "--jobs" not in args
@@ -232,9 +238,11 @@ def test_diagnostic_streams_are_drained_but_bounded():
 
     async def scenario():
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-c",
+            sys.executable,
+            "-c",
             "import sys; sys.stdout.buffer.write(b'x'*1000000); sys.stderr.buffer.write(b'y'*1000000)",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         out, err = await finish(proc, 5)
         assert proc.returncode == 0

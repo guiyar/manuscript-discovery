@@ -45,9 +45,7 @@ async def _version(settings: Settings) -> str | None:
         return None
 
 
-async def run(
-    settings: Settings, gate: asyncio.Semaphore | None = None
-) -> dict:
+async def run(settings: Settings, gate: asyncio.Semaphore | None = None) -> dict:
     version = await _version(settings)
     if version is None:
         return {"typst": None, "cjk_png": {}, "ok": False}
@@ -58,7 +56,9 @@ async def run(
             gate if gate is not None else asyncio.Semaphore(1),
             ["--format", "png", "--ppi", "48"],
             "out-{0p}.png",
-            lambda w: read_pages(w, settings.max_preview_mb * 1024 * 1024, len(CJK_FONTS) * len(_SAMPLES)),
+            lambda w: read_pages(
+                w, settings.max_preview_mb * 1024 * 1024, len(CJK_FONTS) * len(_SAMPLES)
+            ),
             None,
             source=_source(),
         )

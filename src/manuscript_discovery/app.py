@@ -145,7 +145,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # lookup and registration. The enclosing document gate bounds waiters.
         entry = in_flight.get(key)
         if entry is None:
-            entry = InFlightPreview(asyncio.create_task(compile_preview(key, data, complete)))
+            entry = InFlightPreview(
+                asyncio.create_task(compile_preview(key, data, complete))
+            )
             in_flight[key] = entry
         entry.waiters += 1
         try:
