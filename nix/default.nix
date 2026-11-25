@@ -24,3 +24,8 @@ in
   default = app;
   inherit fonts;
 }
+// pkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+  docker = pkgs.callPackage ./docker.nix {
+    inherit app;
+  };
+}

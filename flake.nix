@@ -15,34 +15,8 @@
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
-      packages = forAllSystems (
-        pkgs:
-        let
-          packages = import ./nix { inherit pkgs; };
-          app = packages.default;
-        in
-        packages
-        // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          docker = pkgs.dockerTools.buildLayeredImage {
-            name = "manuscript-discovery";
-            tag = "latest";
-            contents = [ app ];
-            extraCommands = "mkdir -p tmp && chmod 1777 tmp";
-            config = {
-              Entrypoint = [ "${app}/bin/manuscript-discovery" ];
-              Cmd = [ "serve" ];
-              User = "65534:65534";
-              ExposedPorts."8000/tcp" = { };
-              Volumes."/data" = { };
-              Env = [
-                "MANUSCRIPT_DB_PATH=/data/library.sqlite"
-                "MANUSCRIPT_HOST=0.0.0.0"
-                "MANUSCRIPT_PORT=8000"
-              ];
-            };
-          };
-        }
-      );
+
+      packages = forAllSystems (pkgs: import ./nix { inherit pkgs; });
 
       apps = forAllSystems (pkgs: {
         default = {
