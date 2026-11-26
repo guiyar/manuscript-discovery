@@ -10,12 +10,15 @@ from manuscript_discovery.settings import Settings
 
 SOURCE = Path(assets.__file__).parent / "static"
 HAS_MINIFY = shutil.which("minify") is not None
+HAS_TAILWIND = shutil.which("tailwindcss") is not None
 
 
 @pytest.fixture()
 def static_copy(tmp_path):
-    """A scratch copy of the real UI source, so building never touches the repository."""
-    shutil.copytree(SOURCE, tmp_path / "static", ignore=shutil.ignore_patterns("dist"))
+    """A scratch copy of the real UI source (without generated files), so building never touches the repository."""
+    shutil.copytree(
+        SOURCE, tmp_path / "static", ignore=shutil.ignore_patterns("dist", "styles.css")
+    )
     return tmp_path / "static"
 
 
@@ -91,3 +94,47 @@ def test_what_is_served_is_the_minified_build_when_there_is_one(db_path, static_
     with client_for(db_path, static_dir=assets.serving_root(static_copy)) as c:
         served = c.get("/").content
     assert len(served) < 0.85 * source_size and b"Manuscript Discovery" in served
+
+
+# --- the Tailwind stylesheet (generated, not committed) -----------------------------------------
+
+
+def test_a_missing_tailwind_or_source_is_a_clear_error(tmp_path):
+    with pytest.raises(FileNotFoundError, match="tailwindcss"):
+        assets.compile_css(
+            tmp_path / "styles.css", tailwind_bin="definitely-not-installed"
+        )
+    if HAS_TAILWIND:
+        with pytest.raises(FileNotFoundError, match="not found"):
+            assets.compile_css(tmp_path / "styles.css", source=tmp_path / "nope.css")
+
+
+@pytest.mark.skipif(not HAS_TAILWIND, reason="tailwindcss not installed")
+def test_the_stylesheet_is_compiled_from_the_markup_and_the_script(tmp_path):
+    css = assets.compile_css(tmp_path / "styles.css").read_text()
+    # Classes written in the markup, the form components, and ones the script adds at runtime.
+    for cls in (
+        ".bg-desk",
+        ".bg-panel",
+        ".text-brass",
+        ".btn-primary",
+        ".input",
+        ".list-disc",
+        ".max-w-2xl",
+    ):
+        assert cls in css, cls
+    # The palette switches with the browser's colour scheme, with no per-element dark: pairs.
+    assert "prefers-color-scheme: dark" in css and "--panel: #221a12" in css
+    assert "@import" not in css and "url(" not in css  # nothing the CSP would block
+
+
+@pytest.mark.skipif(not HAS_TAILWIND, reason="tailwindcss not installed")
+def test_the_built_stylesheet_is_served_under_the_csp(db_path, static_copy):
+    assets.compile_css(static_copy / "styles.css")
+    with client_for(db_path, static_dir=static_copy) as c:
+        sheet = c.get("/styles.css")
+        csp = c.get("/").headers["content-security-policy"]
+    assert sheet.status_code == 200 and sheet.headers["content-type"].startswith(
+        "text/css"
+    )
+    assert "style-src 'self';" in csp + ";"

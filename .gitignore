@@ -5,4 +5,5 @@ __pycache__/
 result
 .pytest_cache/
 src/manuscript_discovery/static/dist/
+src/manuscript_discovery/static/styles.css
 node_modules/

@@ -1,0 +1,76 @@
+/* Tailwind input for the UI. `manuscript-discovery build-assets` compiles it to
+   src/manuscript_discovery/static/styles.css (generated and gitignored); while editing, run
+
+     tailwindcss -i ui/tailwind.css -o src/manuscript_discovery/static/styles.css --watch
+
+   The palette is the reading room: vellum, iron-gall ink and an oxblood binding by day, lamplit
+   oak and brass by night. It is a set of CSS variables that change with the browser's colour
+   scheme, exposed as Tailwind colours, so markup says `bg-panel` or `text-accent` and never
+   needs `dark:` pairs. Re-colour the page by changing the values below. Everything else is
+   Tailwind's default theme. Only index.html is scanned for classes, so classes the script adds
+   to elements are written out in full there. */
+@import "tailwindcss" source(none);
+@source "../src/manuscript_discovery/static/index.html";
+
+@layer base {
+  :root {
+    --desk: #c8b793;          /* page background, behind the panels */
+    --panel: #ece1c9;         /* sidebar and preview card */
+    --field: #f4ecd9;         /* inputs */
+    --ink: #2b2118;           /* text */
+    --muted: #6a5a45;         /* secondary text */
+    --line: #b3a07a;          /* borders */
+    --accent: #7a2e22;        /* primary buttons, toggled controls */
+    --accent-ink: #f6ecd6;    /* text on --accent */
+    --brass: #8f6a22;         /* headings, focus rings */
+    --error: #8f1d1d;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --desk: #15100b;
+      --panel: #221a12;
+      --field: #2b2118;
+      --ink: #eadfc6;
+      --muted: #a8977a;
+      --line: #46392a;
+      --accent: #c9a24b;
+      --accent-ink: #1b140c;
+      --brass: #c9a24b;
+      --error: #e58b7e;
+    }
+  }
+}
+
+/* `inline` makes utilities read the variables above, so they follow the colour scheme. */
+@theme inline {
+  --color-desk: var(--desk);
+  --color-panel: var(--panel);
+  --color-field: var(--field);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-brass: var(--brass);
+  --color-error: var(--error);
+}
+
+/* The few things the form repeats. Layout and one-offs stay as utilities in the markup. */
+@layer components {
+  .label {
+    @apply mb-1 block text-sm font-medium text-muted;
+  }
+  .input {
+    @apply block w-full rounded-md border border-line bg-field px-3 py-2 text-sm text-ink shadow-sm placeholder:text-muted/60 focus:border-brass focus:ring-2 focus:ring-brass/30 focus:outline-none;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-ink hover:bg-accent/90;
+  }
+  .btn-secondary {
+    @apply bg-transparent text-accent ring-1 ring-accent ring-inset hover:bg-accent/10;
+  }
+}

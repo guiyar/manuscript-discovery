@@ -3,6 +3,7 @@
   python3Packages,
   typst,
   minify,
+  tailwindcss_4,
   fonts,
 }:
 
@@ -13,10 +14,14 @@ python3Packages.buildPythonApplication {
   src = lib.cleanSource ../.;
 
   build-system = [ python3Packages.hatchling ];
-  # `minify` runs in the wheel build hook (hatch_build.py). Without it the build would quietly ship the
-  # readable source, so this build insists on it.
-  nativeBuildInputs = [ minify ];
+  # `tailwindcss` and `minify` run in the wheel build hook (hatch_build.py). Without them the build
+  # would quietly ship an unstyled, unminified UI, so this build insists on both.
+  nativeBuildInputs = [
+    minify
+    tailwindcss_4
+  ];
   env.MANUSCRIPT_REQUIRE_MINIFY = "1";
+  env.MANUSCRIPT_REQUIRE_TAILWIND = "1";
   dependencies = with python3Packages; [
     fastapi
     uvicorn
@@ -44,8 +49,10 @@ python3Packages.buildPythonApplication {
   '';
   pythonImportsCheck = [ "manuscript_discovery" ];
   postInstallCheck = ''
-    test -s $out/${python3Packages.python.sitePackages}/manuscript_discovery/static/dist/index.html \
-      || { echo "the minified UI is missing from the installed package"; exit 1; }
+    for f in index.html styles.css; do
+      test -s $out/${python3Packages.python.sitePackages}/manuscript_discovery/static/dist/$f \
+        || { echo "the built UI ($f) is missing from the installed package"; exit 1; }
+    done
   '';
 
   meta = {

@@ -1,179 +1,143 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Manuscript Discovery</title>
-<style>
-  /* Reading room by day: vellum, iron-gall ink, oxblood binding. By night: lamplit oak and brass. */
-  :root {
-    --desk: #c8b793;
-    --panel: #ece1c9;
-    --field: #f4ecd9;
-    --ink: #2b2118;
-    --muted: #6a5a45;
-    --line: #b3a07a;
-    --accent: #7a2e22;
-    --accent-ink: #f6ecd6;
-    --brass: #8f6a22;
-    --error: #8f1d1d;
-    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
-    color-scheme: light dark;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --desk: #15100b; --panel: #221a12; --field: #2b2118; --ink: #eadfc6; --muted: #a8977a;
-      --line: #46392a; --accent: #c9a24b; --accent-ink: #1b140c; --brass: #c9a24b; --error: #e58b7e;
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body { font: 16px/1.5 var(--serif); color: var(--ink); background: var(--desk); }
-  .app { display: grid; grid-template-columns: 24rem 1fr; height: 100%; }
-  form { background: var(--panel); border-right: 1px solid var(--line); padding: 1.6rem 1.5rem 2rem; overflow-y: auto; }
-  header { margin-bottom: 1.5rem; padding-bottom: .9rem; border-bottom: 3px double var(--line); }
-  h1 { font: 600 1.7rem/1.1 var(--serif); margin: 0; font-variant: small-caps; letter-spacing: .06em; }
-  header p { margin: .35rem 0 0; color: var(--muted); font-style: italic; font-size: .95rem; }
-  fieldset { border: 0; padding: 0; margin: 0 0 1.3rem; }
-  legend { font: 600 .8rem/1 var(--serif); font-variant: small-caps; letter-spacing: .12em; color: var(--brass); padding: 0; margin-bottom: .6rem; }
-  label { display: block; color: var(--muted); font-size: .88rem; margin: .65rem 0 .2rem; }
-  select, input[type=number], input[type=text], input[type=search] {
-    width: 100%; font: inherit; color: var(--ink); background: var(--field);
-    border: 1px solid var(--line); border-radius: 2px; padding: .45rem .55rem;
-  }
-  .range { display: grid; grid-template-columns: 3.2rem 1fr 1fr; gap: .5rem; align-items: end; }
-  select + .range { margin-top: .8rem; }
-  .range + .range { margin-top: .6rem; }
-  .range b { font: 600 .9rem var(--serif); color: var(--muted); padding-bottom: .55rem; }
-  .range label { margin: 0 0 .2rem; font-size: .78rem; }
-  .check { display: flex; gap: .6rem; align-items: baseline; color: var(--ink); margin: .5rem 0 0; font-size: .98rem; }
-  .check small { display: block; color: var(--muted); font-size: .8rem; line-height: 1.3; }
-  .sub { display: flex; gap: 1.4rem; margin: .1rem 0 .3rem 1.55rem; padding: .1rem 0 .1rem .8rem; border: 0; border-left: 2px solid var(--brass); }
-  .sub:disabled { opacity: .45; }
-  .sub .check { margin: 0; font-size: .95rem; }
-  .sub legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  details { margin-bottom: 1.3rem; }
-  summary { cursor: pointer; font: 600 .8rem var(--serif); font-variant: small-caps; letter-spacing: .12em; color: var(--brass); }
-  .actions { display: grid; gap: .5rem; }
-  button { font: inherit; border-radius: 2px; padding: .6rem .9rem; cursor: pointer; border: 1px solid var(--accent); }
-  button.primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; letter-spacing: .02em; }
-  button.secondary { background: transparent; color: var(--accent); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  :focus-visible { outline: 3px solid color-mix(in srgb, var(--brass) 70%, transparent); outline-offset: 2px; }
-  #problems { margin: 0 0 1rem; padding: .7rem .8rem; border: 1px solid var(--error); border-left-width: 4px; background: color-mix(in srgb, var(--error) 8%, var(--panel)); font-size: .92rem; }
-  #problems ul { margin: 0 0 .5rem; padding-left: 1.1rem; }
-  #problems button { padding: .35rem .7rem; font-size: .9rem; }
-  main { display: flex; flex-direction: column; min-width: 0; padding: 1rem 1.4rem 1.4rem; gap: .6rem; }
-  #status { min-height: 1.5rem; color: var(--panel); font-style: italic; }
-  @media (prefers-color-scheme: dark) { #status { color: var(--muted); } }
-  #status.error { color: #ffd9c9; font-style: normal; font-weight: 600; }
-  .sheet { flex: 1; min-height: 0; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 2px 10px rgb(0 0 0 / .25); }
-  .bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
-  .seg { display: inline-flex; }
-  .seg button { padding: .3rem .9rem; font-size: .9rem; background: var(--panel); color: var(--ink); border-color: var(--line); }
-  .seg button:first-child { border-radius: 2px 0 0 2px; }
-  .seg button:last-child { border-radius: 0 2px 2px 0; margin-left: -1px; }
-  .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  #pages { height: 100%; overflow: auto; padding: 1.2rem; display: grid; gap: 1.1rem; align-content: start; justify-items: center; background: var(--desk); transition: opacity .15s; }
-  #pages[aria-busy=true] { opacity: .55; }
-  #pages img { width: min(100%, 46rem); height: auto; background: #fff; box-shadow: 0 2px 8px rgb(0 0 0 / .35); }
-  #pages .note { color: var(--panel); font-style: italic; margin: 0 0 .5rem; text-align: center; }
-  @media (prefers-color-scheme: dark) { #pages .note { color: var(--muted); } }
-  #text { margin: 0; height: 100%; overflow: auto; padding: 2rem clamp(1rem, 6vw, 5rem); font: 1.1rem/1.7 var(--serif); white-space: pre-wrap; }
-  .empty { height: 100%; display: grid; place-content: center; text-align: center; color: var(--muted); padding: 2rem; }
-  .empty p { max-width: 30rem; margin: 0; font: italic 1.2rem/1.5 var(--serif); }
-  [hidden] { display: none !important; }
-  @media (max-width: 52rem) {
-    .app { grid-template-columns: 1fr; height: auto; }
-    form { border-right: 0; border-bottom: 1px solid var(--line); }
-    .sheet { min-height: 70vh; }
-  }
-</style>
+<link rel="stylesheet" href="styles.css">
 </head>
-<body>
-<div class="app">
-  <form id="form" autocomplete="off">
+<body class="h-full bg-desk text-ink">
+<div class="flex min-h-full flex-col md:h-full md:flex-row">
+
+  <!-- Settings -->
+  <form id="form" autocomplete="off" class="w-full shrink-0 space-y-6 border-b border-line bg-panel p-6 md:w-96 md:overflow-y-auto md:border-r md:border-b-0">
     <header>
-      <h1>Manuscript Discovery</h1>
-      <p>Any passage, set as a clean manuscript for study.</p>
+      <h1 class="text-xl font-semibold tracking-tight">Manuscript Discovery</h1>
+      <p class="mt-1 text-sm text-muted italic">Any passage, set as a clean manuscript for study.</p>
     </header>
 
-    <fieldset>
-      <legend>Translation</legend>
-      <label for="t1">Search by name, abbreviation or language</label>
-      <input id="t1" type="search" placeholder="e.g. king james, greek, KJV" required>
-      <label for="t2">Parallel translation (optional)</label>
-      <input id="t2" type="search" placeholder="none">
-    </fieldset>
-
-    <fieldset>
-      <legend>Passage</legend>
-      <label for="book">Book</label>
-      <select id="book"></select>
-      <div class="range">
-        <b>From</b>
-        <div><label for="c1">Chapter</label><input id="c1" type="number" min="1" inputmode="numeric"></div>
-        <div><label for="v1">Verse</label><input id="v1" type="number" min="1" inputmode="numeric"></div>
+    <fieldset class="space-y-4">
+      <legend class="mb-3 text-sm font-semibold text-brass">Translation</legend>
+      <div>
+        <label for="t1" class="label">Search by name, abbreviation or language</label>
+        <input id="t1" type="search" class="input" placeholder="e.g. king james, greek, KJV" required>
       </div>
-      <div class="range">
-        <b>To</b>
-        <div><label for="c2">Chapter</label><input id="c2" type="number" min="1" inputmode="numeric" placeholder="same"></div>
-        <div><label for="v2">Verse</label><input id="v2" type="number" min="1" inputmode="numeric" placeholder="end"></div>
+      <div>
+        <label for="t2" class="label">Parallel translation (optional)</label>
+        <input id="t2" type="search" class="input" placeholder="none">
       </div>
     </fieldset>
 
-    <div id="problems" role="status" aria-live="polite" hidden></div>
-
-    <fieldset>
-      <legend>Manuscript</legend>
-      <label class="check"><input id="paragraphs" type="checkbox"><span>Paragraph breaks<small>off: continuous text; on: where the translation marks them</small></span></label>
-      <label class="check"><input id="poetry" type="checkbox" checked><span>Poetry lines<small>only where the translation marks them</small></span></label>
-      <label class="check"><input id="line_numbers" type="checkbox" checked><span>Line numbers<small>restart each page; first translation only when parallel</small></span></label>
-      <label class="check"><input id="notes" type="checkbox" checked><span>Space for notes<small>wide margins and open line spacing</small></span></label>
-      <fieldset class="sub" id="spacingBox">
-        <legend>Line spacing for notes</legend>
-        <label class="check"><input type="radio" name="line_spacing" value="1.5" checked><span>1.5 lines</span></label>
-        <label class="check"><input type="radio" name="line_spacing" value="2"><span>Double</span></label>
-      </fieldset>
-      <label class="check"><input id="colophon" type="checkbox" checked><span>Copyright notice<small>at the end of each text</small></span></label>
+    <fieldset class="space-y-4">
+      <legend class="mb-3 text-sm font-semibold text-brass">Passage</legend>
+      <div>
+        <label for="book" class="label">Book</label>
+        <select id="book" class="input"></select>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label for="c1" class="label">From chapter</label>
+          <input id="c1" type="number" class="input" min="1" inputmode="numeric">
+        </div>
+        <div>
+          <label for="v1" class="label">From verse</label>
+          <input id="v1" type="number" class="input" min="1" inputmode="numeric">
+        </div>
+        <div>
+          <label for="c2" class="label">To chapter</label>
+          <input id="c2" type="number" class="input" min="1" inputmode="numeric" placeholder="same">
+        </div>
+        <div>
+          <label for="v2" class="label">To verse</label>
+          <input id="v2" type="number" class="input" min="1" inputmode="numeric" placeholder="end">
+        </div>
+      </div>
     </fieldset>
 
-    <details>
-      <summary>Page</summary>
-      <label for="paper">Paper</label>
-      <select id="paper">
-        <option value="a4">A4</option><option value="a5">A5</option>
-        <option value="a6">A6</option><option value="us-letter">US Letter</option>
-      </select>
-      <label for="size">Font size (pt)</label>
-      <input id="size" type="number" min="8" max="16" step="0.5" value="11">
-      <label for="title">Title (empty = the passage reference)</label>
-      <input id="title" type="text" maxlength="200">
+    <div id="problems" role="status" aria-live="polite" hidden class="rounded-md border border-l-4 border-error bg-error/10 p-3 text-sm text-ink"></div>
+
+    <fieldset class="space-y-4">
+      <legend class="mb-3 text-sm font-semibold text-brass">Manuscript</legend>
+      <label class="flex items-start gap-3 text-sm">
+        <input id="paragraphs" type="checkbox" class="mt-0.5 size-4 accent-accent">
+        <span><span class="font-medium">Paragraph breaks</span><span class="block text-muted">Off: continuous text. On: where the translation marks them.</span></span>
+      </label>
+      <label class="flex items-start gap-3 text-sm">
+        <input id="poetry" type="checkbox" class="mt-0.5 size-4 accent-accent" checked>
+        <span><span class="font-medium">Poetry lines</span><span class="block text-muted">Only where the translation marks them.</span></span>
+      </label>
+      <label class="flex items-start gap-3 text-sm">
+        <input id="line_numbers" type="checkbox" class="mt-0.5 size-4 accent-accent" checked>
+        <span><span class="font-medium">Line numbers</span><span class="block text-muted">Restart each page; first translation only when parallel.</span></span>
+      </label>
+      <div class="space-y-3">
+        <label class="flex items-start gap-3 text-sm">
+          <input id="notes" type="checkbox" class="mt-0.5 size-4 accent-accent" checked>
+          <span><span class="font-medium">Space for notes</span><span class="block text-muted">Wide margins and open line spacing.</span></span>
+        </label>
+        <fieldset id="spacingBox" class="flex gap-6 pl-7 text-sm disabled:opacity-50">
+          <legend class="sr-only">Line spacing for notes</legend>
+          <label class="flex items-center gap-2"><input type="radio" name="line_spacing" value="1.5" class="size-4 accent-accent" checked>1.5 lines</label>
+          <label class="flex items-center gap-2"><input type="radio" name="line_spacing" value="2" class="size-4 accent-accent">Double</label>
+        </fieldset>
+      </div>
+      <label class="flex items-start gap-3 text-sm">
+        <input id="colophon" type="checkbox" class="mt-0.5 size-4 accent-accent" checked>
+        <span><span class="font-medium">Copyright notice</span><span class="block text-muted">At the end of each text.</span></span>
+      </label>
+    </fieldset>
+
+    <details class="group">
+      <summary class="cursor-pointer text-sm font-semibold text-brass">Page</summary>
+      <div class="mt-4 space-y-4">
+        <div>
+          <label for="paper" class="label">Paper</label>
+          <select id="paper" class="input">
+            <option value="a4">A4</option><option value="a5">A5</option>
+            <option value="a6">A6</option><option value="us-letter">US Letter</option>
+          </select>
+        </div>
+        <div>
+          <label for="size" class="label">Font size (pt)</label>
+          <input id="size" type="number" class="input" min="8" max="16" step="0.5" value="11">
+        </div>
+        <div>
+          <label for="title" class="label">Title (empty = the passage reference)</label>
+          <input id="title" type="text" class="input" maxlength="200">
+        </div>
+      </div>
     </details>
 
-    <div class="actions">
-      <button class="primary" type="button" id="download">Download PDF</button>
-    </div>
+    <button type="button" id="download" class="btn btn-primary w-full">Download PDF</button>
   </form>
 
-  <main>
-    <div class="bar">
-      <div id="status" role="status" aria-live="polite"></div>
-      <div class="seg" role="group" aria-label="Preview as">
-        <button type="button" id="viewPage" aria-pressed="true">Page</button>
-        <button type="button" id="viewText" aria-pressed="false">Text</button>
+  <!-- Preview -->
+  <main class="flex min-w-0 flex-1 flex-col gap-3 p-4 md:p-6">
+    <div class="flex items-center justify-between gap-4">
+      <div id="status" role="status" aria-live="polite" class="min-h-6 text-sm text-ink italic [&.error]:font-semibold [&.error]:text-error [&.error]:not-italic"></div>
+      <div class="inline-flex rounded-md shadow-sm" role="group" aria-label="Preview as">
+        <button type="button" id="viewPage" aria-pressed="true" class="rounded-l-md px-3 py-1.5 text-sm font-medium bg-panel text-ink ring-1 ring-line ring-inset hover:bg-field aria-pressed:bg-accent aria-pressed:text-accent-ink aria-pressed:ring-accent">Page</button>
+        <button type="button" id="viewText" aria-pressed="false" class="rounded-r-md px-3 py-1.5 text-sm font-medium bg-panel text-ink ring-1 ring-line ring-inset hover:bg-field aria-pressed:bg-accent aria-pressed:text-accent-ink aria-pressed:ring-accent">Text</button>
       </div>
     </div>
-    <div class="sheet">
-      <div class="empty" id="empty"><p>Choose a translation and a passage. The page appears here and follows every change.</p></div>
-      <div id="pages" aria-busy="false" hidden></div>
-      <pre id="text" hidden></pre>
+
+    <div class="min-h-[28rem] flex-1 overflow-hidden rounded-lg border border-line bg-panel shadow-sm md:min-h-0">
+      <div id="empty" class="grid h-full place-content-center p-8 text-center text-muted italic">
+        <p class="max-w-sm">Choose a translation and a passage. The page appears here and follows every change.</p>
+      </div>
+      <div id="pages" aria-busy="false" hidden class="grid h-full content-start justify-items-center gap-4 overflow-auto bg-desk p-4 transition-opacity aria-busy:opacity-50"></div>
+      <pre id="text" hidden class="h-full overflow-auto p-6 font-serif text-base leading-7 whitespace-pre-wrap"></pre>
     </div>
   </main>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
+// Tailwind classes for the elements built here. Keep them literal: the stylesheet is compiled by scanning this file.
+const FIX_BUTTON = "btn btn-secondary mt-3 px-2.5 py-1.5 text-xs";
+const PROBLEM_LIST = "list-disc space-y-1 pl-5";
+const PAGE_IMAGE = "h-auto w-full max-w-2xl bg-white shadow-md ring-1 ring-ink/10";
+const PAGE_NOTE = "text-center text-sm text-ink/70 italic";
 const outlines = {};   // translation id -> outline
 const names = {};      // translation id -> display name
 const bookNames = {};  // book code -> name, accumulated from every outline seen
@@ -285,12 +249,12 @@ function check() {
   box.hidden = !list.length;
   box.replaceChildren();
   if (list.length) {
-    const ul = document.createElement("ul");
+    const ul = Object.assign(document.createElement("ul"), { className: PROBLEM_LIST });
     ul.append(...list.map((m) => Object.assign(document.createElement("li"), { textContent: m })));
     box.append(ul);
     const fixable = chosen().length && chosen().every((id) => outlines[id]?.some((b) => b.code === book));
     if (fixable && list.some((m) => /chapters|verses/.test(m))) {
-      const b = Object.assign(document.createElement("button"), { type: "button", className: "secondary", textContent: "Fit passage to these translations" });
+      const b = Object.assign(document.createElement("button"), { type: "button", className: FIX_BUTTON, textContent: "Fit passage to these translations" });
       b.addEventListener("click", fit);
       box.append(b);
     }
@@ -387,11 +351,11 @@ async function update() {
 async function showPages(signal, mine) {
   const info = await getJson(`/api/preview?${query("pdf")}`, signal);
   const imgs = Array.from({ length: info.pages }, (_, i) =>
-    Object.assign(new Image(), { src: `/api/preview/${info.key}/${i + 1}.png`, alt: `Page ${i + 1}` }));
+    Object.assign(new Image(), { src: `/api/preview/${info.key}/${i + 1}.png`, alt: `Page ${i + 1}`, className: PAGE_IMAGE }));
   await Promise.all(imgs.map((img) => img.decode?.().catch(() => {})));   // swap only once decoded: no flicker
   if (mine !== seq) return;
   const note = info.complete ? [] : [Object.assign(document.createElement("p"),
-    { className: "note", textContent: `Preview shows the first ${info.pages} pages. Download the PDF for the whole text.` })];
+    { className: PAGE_NOTE, textContent: `Preview shows the first ${info.pages} pages. Download the PDF for the whole text.` })];
   $("pages").replaceChildren(...imgs, ...note);
   show("pages");
 }

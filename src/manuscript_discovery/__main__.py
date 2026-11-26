@@ -20,7 +20,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("serve", help="run the web app (default)")
     sub.add_parser(
         "build-assets",
-        help="minify the web UI into static/dist (needs `minify` on PATH)",
+        help="compile the Tailwind stylesheet, then minify the web UI into static/dist "
+        "(needs `tailwindcss` and `minify` on PATH)",
     )
     ing = sub.add_parser(
         "ingest", help="add or refresh translations from eBible *_usfx.zip files"
@@ -52,7 +53,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.cmd == "build-assets":
-        written = assets.build(Path(__file__).parent / "static")
+        static = Path(__file__).parent / "static"
+        sheet = assets.compile_css(static / "styles.css")
+        print(f"compiled {sheet.name} ({sheet.stat().st_size} B)")
+        written = assets.build(static)
         print(
             f"minified {len(written)} file(s): "
             + ", ".join(f"{p.name} ({p.stat().st_size} B)" for p in written)

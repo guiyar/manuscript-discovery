@@ -71,8 +71,9 @@ compression and per-client rate limiting. What the app itself provides and
 expects:
 
 - **Security headers** on every response: a `Content-Security-Policy` that
-    allows exactly the page's own inline script and style by hash (no
-    `unsafe-inline`, no `unsafe-eval`, no framing, no external resources), plus
+    allows exactly the page's own inline script by hash and its own stylesheet
+    from the same origin (no `unsafe-inline`, no `unsafe-eval`, no framing, no
+    external resources), plus
     `nosniff`, `no-referrer`, `X-Frame-Options: DENY` and same-origin resource
     policy. The proxy should add HSTS, not overwrite the CSP, and must not
     rewrite the HTML (the hashes would stop matching). No `Server` header; no
@@ -214,25 +215,49 @@ Things to know:
 
 ## Web assets
 
-`src/manuscript_discovery/static/index.html` is the readable source (one file:
-markup, CSS and JS). It is minified before it is served: about 22 kB to 16 kB,
-and 7.4 kB to 5.9 kB gzipped, with identifiers shortened. The tool is
-[tdewolff/minify] (the one Hugo uses), run
-by `assets.py` into `static/dist/`, which is generated and gitignored.
+The UI is `src/manuscript_discovery/static/index.html` (markup and JS, styled
+with [Tailwind CSS] utility classes) plus `ui/tailwind.css`, the Tailwind input.
+The palette (vellum, ink, oxblood and brass by day; lamplit oak and brass by
+night) is a set of CSS variables in that file, exposed as Tailwind colours
+(`bg-panel`, `text-accent`, ...) and switched by the browser's colour scheme, so
+re-colouring the page means editing those values. Everything else is Tailwind's
+default theme. The stylesheet,
+`static/styles.css`, is compiled from those, and then everything is minified
+into `static/dist/` (about 41 kB to 31 kB, 9 kB gzipped). Both outputs are
+generated and gitignored. The compiler is the [standalone Tailwind CLI] and the
+minifier is [tdewolff/minify] (the one Hugo uses); `assets.py` runs them.
 
-- **Wheel and Nix builds** minify automatically (`hatch_build.py`). The Nix
-    build sets `MANUSCRIPT_REQUIRE_MINIFY`, so it fails rather than silently
-    shipping the unminified file, and checks that `dist/index.html` is in the
-    installed package. A plain `pip install` without `minify` on PATH still
-    works and ships the source.
+- **`manuscript-discovery build-assets`** compiles the stylesheet and then
+    minifies (needs `tailwindcss` and `minify` on PATH, both in the Nix dev
+    shell). While editing the UI, leave the compiler watching instead:
+
+    ```sh
+    tailwindcss -i ui/tailwind.css -o src/manuscript_discovery/static/styles.css --watch
+    ```
+
+    The page is unstyled until the stylesheet exists, and the app logs a warning
+    saying so. Only `index.html` is scanned for classes, so classes for elements
+    the script creates are written out in full in its `<script>`. The page has
+    no inline styles: the CSP allows the stylesheet as `style-src 'self'`, which
+    also rules out Tailwind's Play CDN.
+- **Wheel and Nix builds** do both steps automatically (`hatch_build.py`). The
+    Nix build sets `MANUSCRIPT_REQUIRE_TAILWIND` and `MANUSCRIPT_REQUIRE_MINIFY`,
+    so it fails rather than silently shipping an unstyled or unminified UI, and
+    checks that `dist/index.html` and `dist/styles.css` are in the installed
+    package. A plain `pip install` without those tools on PATH still works, but
+    ships an unstyled UI (no `tailwindcss`) or the unminified source (no
+    `minify`).
 - **At runtime** the app serves `dist/` if it exists, otherwise the source, and
-    logs which. In development that means edits show up immediately; run
+    logs which. In development that means edits to `index.html` show up
+    immediately (with `styles.css` rebuilt by the watcher); run
     `manuscript-discovery build-assets` to try the minified build.
 - Served with `ETag` and `Cache-Control: no-cache`, so a browser revalidates (a
     304 costs nothing) and a new release is picked up at once. Compression
     (gzip/brotli) is left to the reverse proxy.
 
 [tdewolff/minify]: https://github.com/tdewolff/minify
+[Tailwind CSS]: https://tailwindcss.com
+[standalone Tailwind CLI]: https://tailwindcss.com/docs/installation/tailwind-cli
 
 
 ## Tests

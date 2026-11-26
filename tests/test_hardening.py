@@ -67,7 +67,7 @@ def _digest(text):
     )
 
 
-def test_the_csp_allows_exactly_the_inline_code_the_page_contains(db_path, tmp_path):
+def test_the_csp_allows_exactly_the_code_the_page_contains(db_path, tmp_path):
     for name, root in served_variants(tmp_path).items():
         html = (root / "index.html").read_text("utf-8")
         with client(db_path, static_dir=root) as c:
@@ -75,9 +75,12 @@ def test_the_csp_allows_exactly_the_inline_code_the_page_contains(db_path, tmp_p
 
         scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
         styles = re.findall(r"<style>(.*?)</style>", html, re.S)
-        assert scripts and styles, name
+        sheets = re.findall(r"<link\b[^>]*\brel=[\"']?stylesheet[^>]*>", html)
+        assert scripts, name
+        assert not styles, f"{name}: styles belong in styles.css, not inline"
+        assert len(sheets) == 1, name
         assert f"script-src {' '.join(map(_digest, scripts))};" in csp + ";", name
-        assert f"style-src {' '.join(map(_digest, styles))};" in csp + ";", name
+        assert "style-src 'self';" in csp + ";", name
         assert "unsafe-inline" not in csp and "unsafe-eval" not in csp, name
 
 
@@ -105,6 +108,19 @@ def test_a_page_with_no_inline_code_gets_a_closed_policy():
         and "style-src 'none'" in csp
         and "default-src 'none'" in csp
     )
+
+
+def test_a_linked_stylesheet_is_allowed_only_from_the_pages_own_origin():
+    own = content_security_policy('<link rel="stylesheet" href="styles.css">')
+    assert "style-src 'self';" in own + ";"
+    for href in ("https://cdn.test/a.css", "http://cdn.test/a.css", "//cdn.test/a.css"):
+        csp = content_security_policy(f'<link rel="stylesheet" href="{href}">')
+        assert "style-src 'none'" in csp, href
+    # An inline block is still allowed by hash, next to the stylesheet.
+    both = content_security_policy(
+        '<link rel="stylesheet" href="styles.css"><style>a{}</style>'
+    )
+    assert f"style-src 'self' {_digest('a{}')};" in both + ";"
 
 
 def test_a_changed_script_gets_a_different_hash():

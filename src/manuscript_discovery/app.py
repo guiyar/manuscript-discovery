@@ -367,6 +367,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
 
+    if index.is_file() and not (root / "styles.css").is_file():
+        log.warning(
+            "styles.css is missing, so the UI will be unstyled: run `manuscript-discovery build-assets`"
+        )
+
     # Last, so every API route above wins; this serves the UI at "/".
     log.info(
         "manuscript-discovery %s: serving the UI from %s%s",
