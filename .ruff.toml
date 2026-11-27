@@ -1,2 +1,16 @@
+src = ["src", "tests"]  # conftest counts as first-party, as the import order here assumes
+
 [lint]
-extend-select = [ "FAST" ]
+extend-select = [
+  "FAST", "I", "UP", "B", "ASYNC", "S", "BLE", "SIM", "RET", "PERF", "FURB",
+  "RUF", "PT", "LOG", "G", "DTZ", "C4", "PIE", "T20", "PLW", "PLR0402", "PGH",
+]
+ignore = [
+  "RUF001", "RUF002", "RUF003",  # intentional Greek / typographic characters
+  "PT018",                       # the tests use composite asserts deliberately
+  "SIM905",                      # compact `"a b c".split()` word lists read better than 40 literals
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["S101", "S603", "S607"]
+"src/manuscript_discovery/__main__.py" = ["T201"]

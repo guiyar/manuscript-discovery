@@ -10,11 +10,11 @@ import json
 import sqlite3
 import threading
 import zlib
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
-from typing import Mapping, Sequence
 
 from .books import book_name, book_sort_key
 from .metadata import Metadata
@@ -149,7 +149,7 @@ class Library:
         for word in (q or "").split():  # every word must match somewhere
             where.append("search LIKE ? ESCAPE '\\'")
             args.append(_like(word))
-        sql = f"SELECT {_COLUMNS} FROM translation"
+        sql = f"SELECT {_COLUMNS} FROM translation"  # noqa: S608 - _COLUMNS is a constant; values are bound
         sql += (" WHERE " + " AND ".join(where)) if where else ""
         rows = (
             self._conn()
@@ -167,7 +167,8 @@ class Library:
         row = (
             self._conn()
             .execute(
-                f"SELECT {_COLUMNS} FROM translation WHERE id = ?", (translation_id,)
+                f"SELECT {_COLUMNS} FROM translation WHERE id = ?",  # noqa: S608 - _COLUMNS is a constant
+                (translation_id,),
             )
             .fetchone()
         )
@@ -264,7 +265,7 @@ class LibraryWriter:
                     t.search_text,
                     json.dumps(asdict(t.meta), ensure_ascii=False),
                     t.source_sha256,
-                    datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    datetime.now(UTC).isoformat(timespec="seconds"),
                 ),
             )
             for code in sorted(books, key=book_sort_key):

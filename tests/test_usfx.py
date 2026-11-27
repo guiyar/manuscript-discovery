@@ -3,7 +3,7 @@ import zipfile
 
 import pytest
 
-from conftest import EN, EL, usfx
+from conftest import EL, EN, usfx
 from manuscript_discovery.usfx import load_usfx, parse_usfx
 
 
@@ -52,13 +52,8 @@ def test_zip_without_usfx_is_an_error(tmp_path):
     path = tmp_path / "x.zip"
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("readme.txt", "no xml here")
-    with zipfile.ZipFile(path) as zf:
-        try:
-            load_usfx(zf)
-        except ValueError as e:
-            assert "usfx" in str(e)
-        else:
-            raise AssertionError("expected ValueError")
+    with zipfile.ZipFile(path) as zf, pytest.raises(ValueError, match="usfx"):
+        load_usfx(zf)
 
 
 def test_oversized_usfx_member_is_rejected(tmp_path, monkeypatch):
@@ -68,9 +63,11 @@ def test_oversized_usfx_member_is_rejected(tmp_path, monkeypatch):
     path = tmp_path / "x.zip"
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("x-usfx.xml", "<usfx>" + "x" * 100 + "</usfx>")
-    with zipfile.ZipFile(path) as zf:
-        with pytest.raises(ValueError, match="decompressed size"):
-            load_usfx(zf)
+    with (
+        zipfile.ZipFile(path) as zf,
+        pytest.raises(ValueError, match="decompressed size"),
+    ):
+        load_usfx(zf)
 
 
 def test_usfx_structure_is_bounded(monkeypatch):
@@ -85,7 +82,7 @@ def test_usfx_structure_is_bounded(monkeypatch):
 
 
 def test_oversized_archive_is_rejected_before_hashing(tmp_path, monkeypatch):
-    import manuscript_discovery.ingest as ingest
+    from manuscript_discovery import ingest
 
     monkeypatch.setattr(ingest, "_MAX_ARCHIVE_BYTES", 32)
     path = tmp_path / "large_usfx.zip"

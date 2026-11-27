@@ -80,7 +80,7 @@ def test_roundtrips_through_dict_ignoring_unknown_keys():
 
 
 def test_oversized_metadata_is_ignored(tmp_path, monkeypatch):
-    import manuscript_discovery.metadata as metadata
+    from manuscript_discovery import metadata
 
     monkeypatch.setattr(metadata, "_MAX_METADATA_BYTES", 64)
     result = meta_for(

@@ -93,7 +93,7 @@ def ingest_paths(
         def attempt(item, get_source) -> None:
             try:
                 store(item, get_source())
-            except Exception as e:  # one bad file must not abort thousands of others
+            except Exception as e:  # noqa: BLE001 - one bad file must not abort thousands of others
                 log.error("%s: %s", item[1], e)
                 failed.append(item[1])
 

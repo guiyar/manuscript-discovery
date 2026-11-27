@@ -234,6 +234,7 @@ def test_output_bounds(tmp_path):
 
 def test_diagnostic_streams_are_drained_but_bounded():
     import sys
+
     from manuscript_discovery.typeset import finish
 
     async def scenario():

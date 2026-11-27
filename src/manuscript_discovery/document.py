@@ -78,7 +78,7 @@ class Document:
         )  # parallel: each text has half the width
         return int(per_page * pages * 1.3)
 
-    def truncated(self, max_chars: int) -> "Document":
+    def truncated(self, max_chars: int) -> Document:
         """Keep roughly the first max_chars of each text, cutting inside a block at a word
         boundary if need be (continuous prose is a single huge block). A preview shows only the
         first few pages and page layout is the expensive part, so this bounds the cost of a

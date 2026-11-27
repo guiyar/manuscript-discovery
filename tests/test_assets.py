@@ -13,7 +13,7 @@ HAS_MINIFY = shutil.which("minify") is not None
 HAS_TAILWIND = shutil.which("tailwindcss") is not None
 
 
-@pytest.fixture()
+@pytest.fixture
 def static_copy(tmp_path):
     """A scratch copy of the real UI source (without generated files), so building never touches the repository."""
     shutil.copytree(

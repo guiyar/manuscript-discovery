@@ -11,9 +11,10 @@ import os
 import signal
 import tempfile
 import time
+from collections.abc import Awaitable, Callable
 from importlib import resources
 from pathlib import Path
-from typing import Awaitable, Callable, TypeVar
+from typing import TypeVar
 
 from .settings import Settings
 

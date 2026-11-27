@@ -29,8 +29,11 @@ def compile_css(
         )
     if not source.is_file():
         raise FileNotFoundError(f"{source} not found: run this from a source checkout")
-    done = subprocess.run(
-        [exe, "-i", str(source), "-o", str(output)], capture_output=True, text=True
+    done = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        [exe, "-i", str(source), "-o", str(output)],
+        capture_output=True,
+        text=True,
+        check=False,  # the exit status is checked below, to report the compiler's own message
     )
     if done.returncode:
         raise RuntimeError(f"tailwindcss failed:\n{done.stderr.strip()}")
@@ -52,7 +55,7 @@ def build(static_dir: Path, minify_bin: str = "minify") -> list[Path]:
         p for p in static_dir.iterdir() if p.is_file() and p.suffix in SUFFIXES
     ):
         target = dist / src.name
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed argv, no shell
             [exe, "-o", str(target), str(src)], check=True, capture_output=True
         )
         written.append(target)

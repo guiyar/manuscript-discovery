@@ -88,7 +88,7 @@ def test_options_reach_the_document(client):
 
 
 @pytest.mark.parametrize(
-    "params,status,message",
+    ("params", "status", "message"),
     [
         ({"translation": "nope"}, 404, "Unknown translation"),
         ({"translation": "tiny", "c1": 2}, 422, "Tiny Version has 1 chapters"),

@@ -93,7 +93,8 @@ class SecurityHeaders:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
-            return await self.app(scope, receive, send)
+            await self.app(scope, receive, send)
+            return
 
         async def send_with_headers(message):
             if message["type"] == "http.response.start":

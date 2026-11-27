@@ -73,7 +73,7 @@ def test_the_socket_path_must_be_absolute():
 
 
 @pytest.mark.parametrize(
-    "kwargs,expected",
+    ("kwargs", "expected"),
     [
         ({}, "127.0.0.1"),
         (

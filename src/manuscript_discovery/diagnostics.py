@@ -20,14 +20,13 @@ _SAMPLES = ("我", "帝")  # any two different, common characters
 
 
 def _source() -> str:
-    pages = []
-    for family in CJK_FONTS:
-        for ch in _SAMPLES:
-            pages.append(
-                f"#set page(width: 2cm, height: 2cm, margin: 2mm)\n"
-                f'#set text(size: 24pt, font: ("{family}", "Libertinus Serif"))\n'
-                f"#align(center + horizon)[{ch}]"
-            )
+    pages = [
+        f"#set page(width: 2cm, height: 2cm, margin: 2mm)\n"
+        f'#set text(size: 24pt, font: ("{family}", "Libertinus Serif"))\n'
+        f"#align(center + horizon)[{ch}]"
+        for family in CJK_FONTS
+        for ch in _SAMPLES
+    ]
     return "\n#pagebreak()\n".join(pages)
 
 

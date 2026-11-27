@@ -37,7 +37,7 @@ class Metadata:
     notice: str | None = None  # one-line licence notice
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Metadata":
+    def from_dict(cls, data: dict) -> Metadata:
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})
 
@@ -121,25 +121,27 @@ def read_metadata(
     zf: zipfile.ZipFile, fallback_language: str | None = None
 ) -> Metadata:
     values: dict[str, str | None] = {"language": fallback_language}
-    if xml := _member(zf, "metadata.xml"):
-        if (root := _root(xml, "metadata.xml")) is not None:
-            statement = root.find("copyright/statement")
-            values |= {
-                "name": _text(root, "identification/name"),
-                "name_local": _text(root, "identification/nameLocal"),
-                "abbreviation": _text(root, "identification/abbreviation"),
-                "abbreviation_local": _text(root, "identification/abbreviationLocal"),
-                "description": _text(root, "identification/description"),
-                "language": _text(root, "language/iso") or fallback_language,
-                "language_name": _text(root, "language/name"),
-                "script": _text(root, "language/script"),
-                "direction": _text(root, "language/scriptDirection"),
-                "country": _text(root, "country/iso"),
-                "copyright": _plain("".join(statement.itertext()))
-                if statement is not None
-                else None,
-            }
-    if xml := _member(zf, "additional.xml"):
-        if (root := _root(xml, "VernacularAdditional")) is not None:
-            values["notice"] = _text(root, "copyright")
+    if (xml := _member(zf, "metadata.xml")) and (
+        root := _root(xml, "metadata.xml")
+    ) is not None:
+        statement = root.find("copyright/statement")
+        values |= {
+            "name": _text(root, "identification/name"),
+            "name_local": _text(root, "identification/nameLocal"),
+            "abbreviation": _text(root, "identification/abbreviation"),
+            "abbreviation_local": _text(root, "identification/abbreviationLocal"),
+            "description": _text(root, "identification/description"),
+            "language": _text(root, "language/iso") or fallback_language,
+            "language_name": _text(root, "language/name"),
+            "script": _text(root, "language/script"),
+            "direction": _text(root, "language/scriptDirection"),
+            "country": _text(root, "country/iso"),
+            "copyright": _plain("".join(statement.itertext()))
+            if statement is not None
+            else None,
+        }
+    if (xml := _member(zf, "additional.xml")) and (
+        root := _root(xml, "VernacularAdditional")
+    ) is not None:
+        values["notice"] = _text(root, "copyright")
     return Metadata(**values)

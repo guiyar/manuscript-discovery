@@ -73,8 +73,8 @@ def test_the_csp_allows_exactly_the_code_the_page_contains(db_path, tmp_path):
         with client(db_path, static_dir=root) as c:
             csp = c.get("/").headers["content-security-policy"]
 
-        scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
-        styles = re.findall(r"<style>(.*?)</style>", html, re.S)
+        scripts = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
+        styles = re.findall(r"<style>(.*?)</style>", html, re.DOTALL)
         sheets = re.findall(r"<link\b[^>]*\brel=[\"']?stylesheet[^>]*>", html)
         assert scripts, name
         assert not styles, f"{name}: styles belong in styles.css, not inline"
@@ -88,14 +88,14 @@ def test_the_page_uses_nothing_the_csp_would_block(tmp_path):
     """A browser would refuse any of these, silently breaking the UI. Checked on both builds."""
     for name, root in served_variants(tmp_path).items():
         html = (root / "index.html").read_text("utf-8")
-        markup = re.sub(r"<(script|style)>.*?</\1>", "", html, flags=re.S)
+        markup = re.sub(r"<(script|style)>.*?</\1>", "", html, flags=re.DOTALL)
         assert not re.search(r"\son[a-z]+\s*=", markup), f"{name}: inline event handler"
         assert not re.search(r"\sstyle\s*=", markup), f"{name}: inline style attribute"
         assert "javascript:" not in markup, name
         assert not re.search(r"(src|href|action)\s*=\s*[\"']?(https?:)?//", markup), (
             f"{name}: external resource"
         )
-        script = " ".join(re.findall(r"<script>(.*?)</script>", html, re.S))
+        script = " ".join(re.findall(r"<script>(.*?)</script>", html, re.DOTALL))
         assert not re.search(
             r"\beval\s*\(|new\s+Function\s*\(|\.innerHTML\s*=|document\.write", script
         ), name
@@ -300,7 +300,7 @@ def test_a_burst_gets_503_with_retry_after_while_the_server_stays_responsive(
 
 
 @pytest.mark.parametrize(
-    "path,output",
+    ("path", "output"),
     [
         ("/api/preview", "pdf"),
         ("/api/render", "pdf"),
@@ -383,7 +383,7 @@ def test_document_admission_precedes_building_and_is_shared(
 
 
 @pytest.mark.parametrize(
-    "env,message",
+    ("env", "message"),
     [
         ({"MANUSCRIPT_PORT": "70000"}, "MANUSCRIPT_PORT"),
         ({"MANUSCRIPT_MAX_CONCURRENT": "0"}, "MANUSCRIPT_MAX_CONCURRENT"),
@@ -522,5 +522,5 @@ def test_serve_passes_concurrency_limit(monkeypatch):
     assert cli.main(["serve"]) == 0
     assert seen["limit_concurrency"] == 48
     assert Settings().limit_concurrency == 48
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="limit_concurrency"):
         Settings(limit_concurrency=1)

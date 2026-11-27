@@ -19,7 +19,7 @@ def blocks(doc, i=0):
 
 
 @pytest.mark.parametrize(
-    "args,expected",
+    ("args", "expected"),
     [
         ((1, 1, 1, 4), "Ephesians 1"),
         ((1, 2, 1, 3), "Ephesians 1:2–3"),
