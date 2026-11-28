@@ -223,7 +223,7 @@ night) is a set of CSS variables in that file, exposed as Tailwind colours
 re-colouring the page means editing those values. Everything else is Tailwind's
 default theme. The stylesheet,
 `static/styles.css`, is compiled from those, and then everything is minified
-into `static/dist/` (about 41 kB to 31 kB, 9 kB gzipped). Both outputs are
+into `static/dist/` (about 59 kB to 44 kB, 12 kB gzipped). Both outputs are
 generated and gitignored. The compiler is the [standalone Tailwind CLI] and the
 minifier is [tdewolff/minify] (the one Hugo uses); `assets.py` runs them.
 

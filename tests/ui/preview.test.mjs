@@ -1,7 +1,7 @@
 // The live preview: low-resolution PNGs, debounced, cancelled when stale, and tied to the options.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { $, BASE, fire, open, previewImages, problems, sleep, spacingRadios, type, waitFor } from "./helpers.mjs";
+import { $, BASE, fire, open, pick, previewImages, problems, sleep, spacingRadios, type, waitFor } from "./helpers.mjs";
 
 test("the preview is a real, screen-resolution PNG and follows changes without a button", async (t) => {
   const w = await open("");
@@ -33,12 +33,12 @@ test("the preview is a real, screen-resolution PNG and follows changes without a
     await waitFor(() => w.__previews >= 3, { what: "the title reset to preview" });
     await sleep(700);
     const before = w.__previews;
-    await type(w, "v1", "99");
+    await pick(w, "t1", "Tiny Version (TNY)");   // has no Genesis
     await waitFor(() => problems(w) !== "", { what: "the problem message" });
     await sleep(1000);
     assert.equal(w.__previews, before);
     assert.ok(previewImages(w).length >= 1, "the previous preview is still shown");
-    await type(w, "v1", "1");
+    await pick(w, "t1", "King James Version (KJV)");
   });
 
   await t.test("the Text view shows the plain text, and Page brings the typeset page back", async () => {

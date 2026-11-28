@@ -116,7 +116,8 @@ def test_the_stylesheet_is_compiled_from_the_markup_and_the_script(tmp_path):
     for cls in (
         ".bg-desk",
         ".bg-panel",
-        ".text-brass",
+        ".heading",
+        ".font-serif",
         ".btn-primary",
         ".input",
         ".list-disc",

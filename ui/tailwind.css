@@ -7,7 +7,7 @@
    oak and brass by night. It is a set of CSS variables that change with the browser's colour
    scheme, exposed as Tailwind colours, so markup says `bg-panel` or `text-accent` and never
    needs `dark:` pairs. Re-colour the page by changing the values below. Everything else is
-   Tailwind's default theme. Only index.html is scanned for classes, so classes the script adds
+   Tailwind's default theme, plus a serif font stack. Only index.html is scanned for classes, so classes the script adds
    to elements are written out in full there. */
 @import "tailwindcss" source(none);
 @source "../src/manuscript_discovery/static/index.html";
@@ -42,6 +42,15 @@
   }
 }
 
+@theme {
+  --font-serif:
+    "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+}
+
+@utility small-caps {
+  font-variant: small-caps;
+}
+
 /* `inline` makes utilities read the variables above, so they follow the colour scheme. */
 @theme inline {
   --color-desk: var(--desk);
@@ -58,6 +67,9 @@
 
 /* The few things the form repeats. Layout and one-offs stay as utilities in the markup. */
 @layer components {
+  .heading {
+    @apply small-caps text-sm font-semibold tracking-widest text-brass;
+  }
   .label {
     @apply mb-1 block text-sm font-medium text-muted;
   }

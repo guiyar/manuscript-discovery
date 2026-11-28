@@ -60,11 +60,16 @@ export async function open(query = "", base = BASE) {
   return w;
 }
 
-/** Type a translation's label into a picker and wait for the page to finish reacting. */
+export const optionsOf = (w, id) => [...$(w, `${id}-list`).querySelectorAll("[role=option]")];
+
+/** Choose a translation as a person would: type to narrow the list, click the option, wait for the page to react. */
 export async function pick(w, id, label) {
   const el = $(w, id);
+  el.focus();
   el.value = label;
   fire(w, el);
+  const option = await waitFor(() => optionsOf(w, id).find((o) => o.textContent === label), { what: `${label} in the list` });
+  option.click();
   await waitFor(() => !$(w, "status").textContent.startsWith("Loading"), { what: `${label} to load` });
 }
 
